@@ -51,7 +51,6 @@ String formatToman(int amount) {
 }
 
 // ======================== مدل‌های داده ========================
-// اجرت هر کار به طور جداگانه
 class LaborItem {
   String title;
   int cost;
@@ -65,7 +64,6 @@ class LaborItem {
       );
 }
 
-// قطعات مصرفی
 class PartItem {
   String name;
   int price;
@@ -79,12 +77,11 @@ class PartItem {
       );
 }
 
-// فاکتور ثبت شده
 class ServiceRecord {
   String id;
   String date;
-  List<LaborItem> labors; // لیست اجرت‌ها
-  List<PartItem> parts;   // لیست قطعات
+  List<LaborItem> labors;
+  List<PartItem> parts;
 
   ServiceRecord({
     required this.id,
@@ -113,7 +110,6 @@ class ServiceRecord {
     if (map['labors'] != null) {
       parsedLabors = (map['labors'] as List).map((l) => LaborItem.fromMap(l)).toList();
     } else if (map['title'] != null || map['laborCost'] != null) {
-      // سازگاری با رکوردهای قدیمی
       parsedLabors = [
         LaborItem(
           title: map['title'] ?? 'خدمات برق',
@@ -131,7 +127,6 @@ class ServiceRecord {
   }
 }
 
-// خودرو
 class Car {
   String id;
   String model;
@@ -174,7 +169,6 @@ class Car {
       );
 }
 
-// مشتری
 class Customer {
   String id;
   String name;
@@ -198,7 +192,7 @@ class Customer {
       );
 }
 
-// ======================== ویجت اصلی برنامه ========================
+// ======================== بدنه برنامه ========================
 class AutoElectricApp extends StatelessWidget {
   const AutoElectricApp({super.key});
 
@@ -249,7 +243,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 
   Future<void> _loadData() async {
     final prefs = await SharedPreferences.getInstance();
-    final String? raw = prefs.getString('customers_data_v5');
+    final String? raw = prefs.getString('customers_data_v6');
     if (raw != null) {
       final List decoded = jsonDecode(raw);
       setState(() {
@@ -261,7 +255,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   Future<void> _saveData() async {
     final prefs = await SharedPreferences.getInstance();
     final String encoded = jsonEncode(customers.map((c) => c.toMap()).toList());
-    await prefs.setString('customers_data_v5', encoded);
+    await prefs.setString('customers_data_v6', encoded);
   }
 
   @override
@@ -288,7 +282,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   }
 }
 
-// ======================== صفحه اصلی ========================
+// ======================== صفحه اصلی و میز کار ========================
 class HomeScreen extends StatefulWidget {
   final List<Customer> customers;
   final VoidCallback onDataChanged;
@@ -304,6 +298,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final int totalCars = widget.customers.fold(0, (sum, c) => sum + c.cars.length);
+
     final filtered = widget.customers.where((c) {
       final q = searchQuery.trim();
       if (q.isEmpty) return true;
@@ -321,15 +317,84 @@ class _HomeScreenState extends State<HomeScreen> {
         centerTitle: true,
         backgroundColor: const Color(0xFF1E293B),
         actions: [
+          // دکمه پیامک گروهی و باشگاه مشتریان
+          IconButton(
+            icon: const Icon(Icons.campaign, color: Colors.amberAccent, size: 26),
+            tooltip: 'پیامک گروهی و شماره مشتریان',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (ctx) => BulkSmsScreen(customers: widget.customers),
+                ),
+              );
+            },
+          ),
           IconButton(
             icon: const Icon(Icons.cloud_sync, color: Colors.cyanAccent),
             tooltip: 'پشتیبان‌گیری و بازیابی',
             onPressed: _openBackupDialog,
-          )
+          ),
         ],
       ),
       body: Column(
         children: [
+          // کارت آمار زنده تعداد مشتری‌ها و خودروها
+          Container(
+            margin: const EdgeInsets.fromLTRB(12, 10, 12, 4),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [const Color(0xFF0284C7).withOpacity(0.3), const Color(0xFF1E293B)],
+                begin: Alignment.centerRight,
+                end: Alignment.centerLeft,
+              ),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: Colors.cyanAccent.withOpacity(0.3)),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.people_alt, color: Colors.cyanAccent, size: 20),
+                    const SizedBox(width: 8),
+                    Text('کل مشتریان: ${widget.customers.length} نفر', 
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                  ],
+                ),
+                Container(height: 16, width: 1, color: Colors.white24),
+                Row(
+                  children: [
+                    const Icon(Icons.directions_car, color: Colors.amberAccent, size: 20),
+                    const SizedBox(width: 8),
+                    Text('کل خودروها: $totalCars دستگاه', 
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                  ],
+                ),
+                InkWell(
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (ctx) => BulkSmsScreen(customers: widget.customers),
+                      ),
+                    );
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.amber[800],
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Text('ارسال پیامک', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white)),
+                  ),
+                )
+              ],
+            ),
+          ),
+
+          // کادر جستجو
           Padding(
             padding: const EdgeInsets.all(12.0),
             child: TextField(
@@ -343,6 +408,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
           ),
+
           Expanded(
             child: filtered.isEmpty
                 ? const Center(child: Text('پرونده‌ای یافت نشد.', style: TextStyle(color: Colors.grey)))
@@ -732,7 +798,234 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-// ======================== صفحه فاکتور با لیست خدمات و قطعات ========================
+// ======================== باشگاه مشتریان و ارسال پیامک گروهی ========================
+class BulkSmsScreen extends StatefulWidget {
+  final List<Customer> customers;
+
+  const BulkSmsScreen({super.key, required this.customers});
+
+  @override
+  State<BulkSmsScreen> createState() => _BulkSmsScreenState();
+}
+
+class _BulkSmsScreenState extends State<BulkSmsScreen> {
+  final TextEditingController _msgCtrl = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _msgCtrl.text = 'مشتری گرامی کلینیک برق خودرو مهندس،\n'
+        'به اطلاع می‌رساند مکان کارگاه به آدرس جدید انتقال یافت.\n'
+        'آدرس جدید: [آدرس خود را اینجا بنویسید]\n'
+        'تلفن: [شماره تماس شما]';
+  }
+
+  List<String> _getValidPhones() {
+    final Set<String> phones = {};
+    for (var c in widget.customers) {
+      final p = c.phone.replaceAll(' ', '').trim();
+      if (p.isNotEmpty && p.length >= 10) {
+        phones.add(p);
+      }
+    }
+    return phones.toList();
+  }
+
+  void _copyAllNumbers({bool withComma = true}) {
+    final phones = _getValidPhones();
+    if (phones.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('هیچ شماره تماسی یافت نشد!')));
+      return;
+    }
+    final text = phones.join(withComma ? ', ' : '\n');
+    Clipboard.setData(ClipboardData(text: text));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('${phones.length} شماره تماس با موفقیت کپی شد!')),
+    );
+  }
+
+  Future<void> _openGroupSms() async {
+    final phones = _getValidPhones();
+    if (phones.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('هیچ شماره تماسی وجود ندارد!')));
+      return;
+    }
+
+    final recipients = phones.join(',');
+    final uri = Uri.parse('sms:$recipients?body=${Uri.encodeComponent(_msgCtrl.text)}');
+    try {
+      await launchUrl(uri);
+    } catch (e) {
+      // در صورتی که سیستم‌عامل اجازه ارسال بیش از حد در URL ندهد، شماره‌ها را کپی می‌کنیم
+      _copyAllNumbers(withComma: true);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('شماره‌ها کپی شدند. به دلیل محدودیت گوشی، می‌توانید در برنامه پیامک Paste کنید.')),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final phones = _getValidPhones();
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('📢 باشگاه مشتریان و پیامک گروهی'),
+        backgroundColor: const Color(0xFF1E293B),
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // کارت خلاصه تعداد شماره‌ها
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: const Color(0xFF0284C7).withOpacity(0.2),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: Colors.cyanAccent),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('تعداد شماره‌های آماده ارسال:', style: TextStyle(color: Colors.white70, fontSize: 13)),
+                      const SizedBox(height: 4),
+                      Text('${phones.length} شماره فعال و بدون تکرار', 
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.greenAccent)),
+                    ],
+                  ),
+                  const Icon(Icons.contact_phone, color: Colors.cyanAccent, size: 36),
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 16),
+            const Text('متن پیامک ارسالی:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+            const SizedBox(height: 8),
+
+            // کادر ویرایش متن
+            TextField(
+              controller: _msgCtrl,
+              maxLines: 5,
+              decoration: InputDecoration(
+                filled: true,
+                fillColor: const Color(0xFF1E293B),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
+              ),
+            ),
+
+            const SizedBox(height: 12),
+            const Text('نمونه متن‌های آماده:', style: TextStyle(fontSize: 12, color: Colors.grey)),
+            const SizedBox(height: 6),
+
+            // قالب‌های آماده
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                ActionChip(
+                  backgroundColor: const Color(0xFF1E293B),
+                  label: const Text('📢 تغییر آدرس مغازه'),
+                  onPressed: () {
+                    setState(() {
+                      _msgCtrl.text = 'مشتری گرامی برق خودرو مهندس،\n'
+                          'مکان کارگاه به آدرس جدید انتقال یافت:\n'
+                          '[آدرس جدید خود را اینجا بنویسید]\n'
+                          'تلفن: [شماره تماس]';
+                    });
+                  },
+                ),
+                ActionChip(
+                  backgroundColor: const Color(0xFF1E293B),
+                  label: const Text('🎁 تخفیف و دیاگ رایگان'),
+                  onPressed: () {
+                    setState(() {
+                      _msgCtrl.text = 'جشنواره تخفیف برق خودرو مهندس!\n'
+                          'دیاگ رایگان و ۲۰٪ تخفیف در اجرت سیم‌کشی و تعمیر دینام تا پایان هفته.\n'
+                          'منتظر حضور گرمتان هستیم.';
+                    });
+                  },
+                ),
+                ActionChip(
+                  backgroundColor: const Color(0xFF1E293B),
+                  label: const Text('❄️ تست رایگان باتری و دینام'),
+                  onPressed: () {
+                    setState(() {
+                      _msgCtrl.text = 'طرح زمستانه برق خودرو مهندس:\n'
+                          'تست رایگان باتری، دینام و سلامت سیستم شارژ قبل از فصل سرما.\n'
+                          'آدرس: [آدرس کارگاه]';
+                    });
+                  },
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 20),
+
+            // دکمه‌های عملیاتی
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.amber[800],
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                    icon: const Icon(Icons.copy, color: Colors.white),
+                    label: const Text('کپی شماره‌ها (با کاما)', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                    onPressed: () => _copyAllNumbers(withComma: true),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF0284C7),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                    icon: const Icon(Icons.send, color: Colors.white),
+                    label: const Text('ارسال پیامک گروهی', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                    onPressed: _openGroupSms,
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 10),
+            Center(
+              child: TextButton.icon(
+                icon: const Icon(Icons.list_alt, size: 18),
+                label: const Text('کپی شماره‌ها خط‌به‌خط (برای اکسل یا دفترچه تلفن)'),
+                onPressed: () => _copyAllNumbers(withComma: false),
+              ),
+            ),
+
+            const Divider(height: 24),
+            const Text('لیست مشتریان و شماره‌ها:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+            const SizedBox(height: 6),
+
+            // نمایش لیست شماره‌ها
+            ...widget.customers.where((c) => c.phone.trim().isNotEmpty).map((c) => Card(
+              margin: const EdgeInsets.symmetric(vertical: 3),
+              child: ListTile(
+                dense: true,
+                leading: const Icon(Icons.phone_android, color: Colors.cyanAccent, size: 20),
+                title: Text(c.name, style: const TextStyle(fontWeight: FontWeight.bold)),
+                trailing: Text(c.phone, style: const TextStyle(color: Colors.amberAccent, fontWeight: FontWeight.bold)),
+              ),
+            )),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ======================== صفحه فاکتورهای خودرو ========================
 class CarServicesScreen extends StatefulWidget {
   final Customer customer;
   final Car car;
@@ -779,7 +1072,7 @@ class _CarServicesScreenState extends State<CarServicesScreen> {
                         ),
                         const Divider(height: 16),
                         
-                        // ۱. لیست اجرت‌ها و خدمات
+                        // ۱. لیست اجرت‌ها
                         const Text('🔧 خدمات و اجرت‌های انجام شده:', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.cyanAccent, fontSize: 13)),
                         const SizedBox(height: 6),
                         ...s.labors.map((l) => Padding(
@@ -802,7 +1095,7 @@ class _CarServicesScreenState extends State<CarServicesScreen> {
                         ),
                         const Divider(height: 16),
 
-                        // ۲. لیست لوازم و قطعات
+                        // ۲. لیست قطعات
                         if (s.parts.isNotEmpty) ...[
                           const Text('🔩 قطعات و لوازم مصرفی:', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.amberAccent, fontSize: 13)),
                           const SizedBox(height: 6),
@@ -1029,7 +1322,6 @@ class _CarServicesScreenState extends State<CarServicesScreen> {
     }
   }
 
-  // ثبت فاکتور جدید با امکان افزودن چند کار و چند قطعه
   void _openAddServiceDialog() {
     final dateCtrl = TextEditingController(text: JalaliHelper.nowShamsi());
     final List<LaborItem> laborsList = [];

@@ -183,7 +183,13 @@ class AutoElectricApp extends StatelessWidget {
       theme: ThemeData(
         brightness: Brightness.dark,
         scaffoldBackgroundColor: const Color(0xFF0F172A),
-        primaryColor: const Color(0xFF0284C7),
+        primaryColor: const Color(0xFF0284C7),// در فایل lib/main.dart
+return Scaffold(
+  appBar: AppBar(
+    title: const Text('⚡ برق خودرو مهندس', style: TextStyle(fontWeight: FontWeight.bold)), // <-- اینجاست
+    centerTitle: true,
+    backgroundColor: const Color(0xFF1E293B),
+...
         cardColor: const Color(0xFF1E293B),
         colorScheme: const ColorScheme.dark(
           primary: Color(0xFF38BDF8),

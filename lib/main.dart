@@ -861,7 +861,7 @@ class DebtorsScreen extends StatelessWidget {
     );
   }
 
-  // اصلاح مشکل + به جای فاصله
+  // حل قطعی کاراکتر + با متد encodeComponent
   Future<void> _sendDebtReminderSms(Customer c, BuildContext context) async {
     final cleanPhone = NumberHelper.cleanNumbers(c.phone);
     if (cleanPhone.isEmpty) {
@@ -1062,7 +1062,7 @@ class _CarServicesScreenState extends State<CarServicesScreen> {
     );
   }
 
-  // اصلاح مشکل + در ارسال پیامک تحویل
+  // حل قطعی کاراکتر + با متد encodeComponent
   Future<void> _sendSmsNotification(ServiceRecord s) async {
     final cleanPhone = NumberHelper.cleanNumbers(widget.customer.phone);
     if (cleanPhone.isEmpty) {
@@ -1115,16 +1115,16 @@ class _CarServicesScreenState extends State<CarServicesScreen> {
     );
   }
 
-  // لودر مقاوم برای حل کامل مشکل مربع شدن حروف فارسی
+  // لودر هوشمند فونت جهت جلوگیری قطعی از مربع شدن حروف فارسی
   Future<pw.Font> _resolvePdfFont({required bool isBold}) async {
-    // مرحله اول: تلاش برای خواندن مستقیم از Assets پروژه
+    // مرحله اول: تلاش برای خواندن مستقیم از Assets پروژه (آفلاین ۱۰۰٪)
     try {
       final assetPath = isBold ? 'assets/fonts/Vazirmatn-Bold.ttf' : 'assets/fonts/Vazirmatn-Regular.ttf';
       final byteData = await rootBundle.load(assetPath);
       return pw.Font.ttf(byteData);
     } catch (_) {}
 
-    // مرحله دوم: تلاش برای دانلود از Google Fonts در صورت وجود اینترنت
+    // مرحله دوم: دریافت آنلاین از گوگل فونت در صورت عدم وجود فایل در Assets
     try {
       if (isBold) {
         return await PdfGoogleFonts.vazirmatnBold();
@@ -1133,7 +1133,7 @@ class _CarServicesScreenState extends State<CarServicesScreen> {
       }
     } catch (_) {}
 
-    // مرحله سوم: پشتیبان آفلاین با یک فونت یونیکد در صورت قطع بودن اینترنت
+    // مرحله سوم: دریافت فونت پشتیبان عربی/فارسی
     try {
       return await PdfGoogleFonts.notoSansArabicRegular();
     } catch (_) {
@@ -1148,9 +1148,8 @@ class _CarServicesScreenState extends State<CarServicesScreen> {
       final font = await _resolvePdfFont(isBold: false);
       final fontBold = await _resolvePdfFont(isBold: true);
 
-      final pageFormat = isThermal
-          ? const PdfPageFormat(80 * PdfPageFormat.mm, double.infinity, marginAll: 4 * PdfPageFormat.mm)
-          : PdfPageFormat.a4;
+      // استفاده از استاندارد عرض ۸۰ میلی‌متری مخصوص فیش پرینترها
+      final pageFormat = isThermal ? PdfPageFormat.roll80 : PdfPageFormat.a4;
 
       pdf.addPage(
         pw.Page(
@@ -1732,7 +1731,7 @@ class _BulkSmsScreenState extends State<BulkSmsScreen> {
                     style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0284C7), padding: const EdgeInsets.symmetric(vertical: 12)),
                     icon: const Icon(Icons.send),
                     label: const Text('ارسال پیامک'),
-                    // اصلاح مشکل + در پیامک گروهی
+                    // حل مشکل + در پیامک گروهی
                     onPressed: () async {
                       if (phones.isEmpty) return;
                       final isIos = !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;

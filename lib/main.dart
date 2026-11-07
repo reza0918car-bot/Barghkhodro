@@ -171,7 +171,7 @@ class AutoElectricApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'کلینیک تخصصی برق خودرو',
+      title: 'برق خودرو مهندس', // تغییر نام پنجره برنامه
       debugShowCheckedModeBanner: false,
       locale: const Locale('fa', 'IR'),
       supportedLocales: const [Locale('fa', 'IR')],

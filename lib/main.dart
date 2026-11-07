@@ -861,8 +861,10 @@ class DebtorsScreen extends StatelessWidget {
     );
   }
 
+  // اصلاح مشکل + به جای فاصله
   Future<void> _sendDebtReminderSms(Customer c, BuildContext context) async {
-    if (c.phone.trim().isEmpty) {
+    final cleanPhone = NumberHelper.cleanNumbers(c.phone);
+    if (cleanPhone.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('شماره همراه مشتری ثبت نشده است!')));
       return;
     }
@@ -871,7 +873,9 @@ class DebtorsScreen extends StatelessWidget {
         'لطفاً در اسرع وقت نسبت به تسویه اقدام فرمایید.\n'
         'با تشکر - برق خودرو مهندس';
 
-    final uri = Uri(scheme: 'sms', path: NumberHelper.cleanNumbers(c.phone), queryParameters: {'body': msg});
+    final encodedMsg = Uri.encodeComponent(msg);
+    final uri = Uri.parse('sms:$cleanPhone?body=$encodedMsg');
+
     try {
       if (await canLaunchUrl(uri)) {
         await launchUrl(uri);
@@ -1058,8 +1062,10 @@ class _CarServicesScreenState extends State<CarServicesScreen> {
     );
   }
 
+  // اصلاح مشکل + در ارسال پیامک تحویل
   Future<void> _sendSmsNotification(ServiceRecord s) async {
-    if (widget.customer.phone.trim().isEmpty) {
+    final cleanPhone = NumberHelper.cleanNumbers(widget.customer.phone);
+    if (cleanPhone.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('شماره همراه مشتری ثبت نشده است!')));
       return;
     }
@@ -1074,7 +1080,9 @@ class _CarServicesScreenState extends State<CarServicesScreen> {
         'مبلغ کل: ${formatToman(s.grandTotal)}$debtText$warranty\n'
         '⚡ کلینیک برق خودرو مهندس';
 
-    final uri = Uri(scheme: 'sms', path: NumberHelper.cleanNumbers(widget.customer.phone), queryParameters: {'body': msg});
+    final encodedMsg = Uri.encodeComponent(msg);
+    final uri = Uri.parse('sms:$cleanPhone?body=$encodedMsg');
+
     try {
       if (await canLaunchUrl(uri)) {
         await launchUrl(uri);
@@ -1107,21 +1115,42 @@ class _CarServicesScreenState extends State<CarServicesScreen> {
     );
   }
 
+  // لودر مقاوم برای حل کامل مشکل مربع شدن حروف فارسی
+  Future<pw.Font> _resolvePdfFont({required bool isBold}) async {
+    // مرحله اول: تلاش برای خواندن مستقیم از Assets پروژه
+    try {
+      final assetPath = isBold ? 'assets/fonts/Vazirmatn-Bold.ttf' : 'assets/fonts/Vazirmatn-Regular.ttf';
+      final byteData = await rootBundle.load(assetPath);
+      return pw.Font.ttf(byteData);
+    } catch (_) {}
+
+    // مرحله دوم: تلاش برای دانلود از Google Fonts در صورت وجود اینترنت
+    try {
+      if (isBold) {
+        return await PdfGoogleFonts.vazirmatnBold();
+      } else {
+        return await PdfGoogleFonts.vazirmatnRegular();
+      }
+    } catch (_) {}
+
+    // مرحله سوم: پشتیبان آفلاین با یک فونت یونیکد در صورت قطع بودن اینترنت
+    try {
+      return await PdfGoogleFonts.notoSansArabicRegular();
+    } catch (_) {
+      return pw.Font.courier();
+    }
+  }
+
   Future<void> _printPdfInvoice(ServiceRecord service, {required bool isThermal}) async {
     try {
       final pdf = pw.Document();
 
-      pw.Font font;
-      pw.Font fontBold;
-      try {
-        font = await PdfGoogleFonts.vazirmatnRegular();
-        fontBold = await PdfGoogleFonts.vazirmatnBold();
-      } catch (_) {
-        font = pw.Font.helvetica();
-        fontBold = pw.Font.helveticaBold();
-      }
+      final font = await _resolvePdfFont(isBold: false);
+      final fontBold = await _resolvePdfFont(isBold: true);
 
-      final pageFormat = isThermal ? const PdfPageFormat(80 * PdfPageFormat.mm, double.infinity, marginAll: 4 * PdfPageFormat.mm) : PdfPageFormat.a4;
+      final pageFormat = isThermal
+          ? const PdfPageFormat(80 * PdfPageFormat.mm, double.infinity, marginAll: 4 * PdfPageFormat.mm)
+          : PdfPageFormat.a4;
 
       pdf.addPage(
         pw.Page(
@@ -1135,13 +1164,19 @@ class _CarServicesScreenState extends State<CarServicesScreen> {
                 crossAxisAlignment: pw.CrossAxisAlignment.start,
                 mainAxisSize: pw.MainAxisSize.min,
                 children: [
-                  pw.Center(child: pw.Text('کلینیک برق خودرو مهندس', style: pw.TextStyle(font: fontBold, fontSize: isThermal ? 13 : 18, fontWeight: pw.FontWeight.bold))),
+                  pw.Center(
+                    child: pw.Text(
+                      'کلینیک برق خودرو مهندس',
+                      style: pw.TextStyle(font: fontBold, fontSize: isThermal ? 13 : 18, fontWeight: pw.FontWeight.bold),
+                    ),
+                  ),
                   pw.SizedBox(height: 4),
                   pw.Divider(thickness: 1),
                   pw.Text('مشتری: ${widget.customer.name}  |  تلفن: ${widget.customer.phone}', style: pw.TextStyle(font: font, fontSize: isThermal ? 8 : 10)),
                   pw.Text('خودرو: ${widget.car.model}  |  پلاک: ${widget.car.fullPlate}', style: pw.TextStyle(font: font, fontSize: isThermal ? 8 : 10)),
                   pw.Text('تاریخ: ${service.date} ${service.km.isNotEmpty ? " | کیلومتر: ${service.km}" : ""}', style: pw.TextStyle(font: font, fontSize: isThermal ? 8 : 10)),
-                  if (service.warrantyNote.isNotEmpty) pw.Text('گارانتی: ${service.warrantyNote}', style: pw.TextStyle(font: font, fontSize: isThermal ? 8 : 10)),
+                  if (service.warrantyNote.isNotEmpty)
+                    pw.Text('گارانتی: ${service.warrantyNote}', style: pw.TextStyle(font: font, fontSize: isThermal ? 8 : 10)),
                   pw.Divider(thickness: 0.8),
                   pw.Text('خدمات و اجرت:', style: pw.TextStyle(font: fontBold, fontSize: isThermal ? 9 : 11)),
                   ...service.labors.map((l) => pw.Row(
@@ -1292,7 +1327,6 @@ class _ServiceEditDialogState extends State<_ServiceEditDialog> {
               ),
               TextField(controller: warrantyCtrl, decoration: const InputDecoration(labelText: 'گارانتی (مثلاً: باتری تا ۱۴۰۵/۰۲)')),
               const SizedBox(height: 12),
-              // بخش اجرت‌ها
               Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(color: const Color(0xFF0F172A), borderRadius: BorderRadius.circular(10)),
@@ -1324,7 +1358,6 @@ class _ServiceEditDialogState extends State<_ServiceEditDialog> {
                 ),
               ),
               const SizedBox(height: 8),
-              // بخش قطعات
               Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(color: const Color(0xFF0F172A), borderRadius: BorderRadius.circular(10)),
@@ -1699,9 +1732,14 @@ class _BulkSmsScreenState extends State<BulkSmsScreen> {
                     style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0284C7), padding: const EdgeInsets.symmetric(vertical: 12)),
                     icon: const Icon(Icons.send),
                     label: const Text('ارسال پیامک'),
+                    // اصلاح مشکل + در پیامک گروهی
                     onPressed: () async {
+                      if (phones.isEmpty) return;
                       final isIos = !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
-                      final uri = Uri(scheme: 'sms', path: phones.take(20).join(isIos ? ';' : ','), queryParameters: {'body': _msgCtrl.text});
+                      final separator = isIos ? ';' : ',';
+                      final phoneList = phones.take(20).join(separator);
+                      final encodedMsg = Uri.encodeComponent(_msgCtrl.text);
+                      final uri = Uri.parse('sms:$phoneList?body=$encodedMsg');
                       try {
                         if (await canLaunchUrl(uri)) await launchUrl(uri);
                       } catch (_) {}

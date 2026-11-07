@@ -29,6 +29,19 @@ class NumberHelper {
     return res.replaceAll(',', '').replaceAll(' ', '');
   }
 
+  /// استانداردسازی شماره همراه برای مقایسه دقیق شماره‌های ایرانی
+  static String normalizePhone(String input) {
+    String res = cleanNumbers(input).replaceAll('-', '').replaceAll('+', '');
+    if (res.startsWith('0098')) {
+      res = '0${res.substring(4)}';
+    } else if (res.startsWith('98') && res.length == 12) {
+      res = '0${res.substring(2)}';
+    } else if (res.length == 10 && res.startsWith('9')) {
+      res = '0$res';
+    }
+    return res;
+  }
+
   static int safeParseInt(String input) {
     final cleaned = cleanNumbers(input);
     return int.tryParse(cleaned) ?? 0;
@@ -183,6 +196,31 @@ class Car {
   });
 
   String get fullPlate => '$plateTwoDigits $plateLetter $plateThreeDigits - ایران $plateProvinceCode';
+
+  String get normalizedPlate =>
+      '${NumberHelper.cleanNumbers(plateTwoDigits)}_${plateLetter.trim()}_${NumberHelper.cleanNumbers(plateThreeDigits)}_${NumberHelper.cleanNumbers(plateProvinceCode)}';
+
+  /// بررسی تطابق دو پلاک جهت تشخیص تکراری بودن
+  bool matchesPlate(String otherTwo, String otherLetter, String otherThree, String otherProv) {
+    final t1 = NumberHelper.cleanNumbers(plateTwoDigits);
+    final t2 = NumberHelper.cleanNumbers(otherTwo);
+    final l1 = plateLetter.trim();
+    final l2 = otherLetter.trim();
+    final th1 = NumberHelper.cleanNumbers(plateThreeDigits);
+    final th2 = NumberHelper.cleanNumbers(otherThree);
+    final p1 = NumberHelper.cleanNumbers(plateProvinceCode);
+    final p2 = NumberHelper.cleanNumbers(otherProv);
+
+    // اگر ارقام اصلی پلاک پر نشده باشند بررسی نمی‌شوند
+    if (t1.isEmpty || th1.isEmpty || t2.isEmpty || th2.isEmpty) return false;
+    if (t1 != t2 || l1 != l2 || th1 != th2) return false;
+
+    // اگر هر دو پلاک دارای کد استان باشند، باید کد استان نیز یکی باشد
+    if (p1.isNotEmpty && p2.isNotEmpty) {
+      return p1 == p2;
+    }
+    return true;
+  }
 
   Map<String, dynamic> toMap() => {
         'id': id,
@@ -348,6 +386,20 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   String searchQuery = '';
+  final TextEditingController _searchCtrl = TextEditingController();
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  void _focusOnCustomer(Customer cust) {
+    setState(() {
+      _searchCtrl.text = cust.name;
+      searchQuery = cust.name;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -438,10 +490,20 @@ class _HomeScreenState extends State<HomeScreen> {
           Padding(
             padding: const EdgeInsets.all(12.0),
             child: TextField(
+              controller: _searchCtrl,
               onChanged: (val) => setState(() => searchQuery = val),
               decoration: InputDecoration(
                 hintText: 'جستجو با نام، شماره، مدل خودرو یا پلاک...',
                 prefixIcon: const Icon(Icons.search, color: Colors.cyanAccent),
+                suffixIcon: searchQuery.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.clear, color: Colors.white60),
+                        onPressed: () {
+                          _searchCtrl.clear();
+                          setState(() => searchQuery = '');
+                        },
+                      )
+                    : null,
                 filled: true,
                 fillColor: const Color(0xFF1E293B),
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
@@ -453,7 +515,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ? const Center(child: Text('پرونده‌ای یافت نشد.', style: TextStyle(color: Colors.grey)))
                 : ListView.builder(
                     itemCount: filtered.length,
-                    itemBuilder: (context, i) => _buildCustomerCard(filtered[i]),
+                    itemBuilder: (context, i) => _buildCustomerCard(filtered[i], filtered.length == 1),
                   ),
           ),
         ],
@@ -467,12 +529,15 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildCustomerCard(Customer customer) {
+  Widget _buildCustomerCard(Customer customer, bool autoExpand) {
     final bool hasDebt = customer.totalDebt > 0;
     return Card(
+      key: ValueKey(customer.id),
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: ExpansionTile(
+        key: PageStorageKey('cust_${customer.id}_$searchQuery'),
+        initiallyExpanded: autoExpand,
         leading: CircleAvatar(
           backgroundColor: hasDebt ? Colors.redAccent.withOpacity(0.8) : const Color(0xFF0284C7),
           child: Icon(hasDebt ? Icons.priority_high : Icons.person, color: Colors.white),
@@ -619,6 +684,16 @@ class _HomeScreenState extends State<HomeScreen> {
       context: context,
       builder: (ctx) => _CustomerEditDialog(
         customer: customer,
+        existingCustomers: widget.customers,
+        onNavigateToCustomer: (existingCust) {
+          _focusOnCustomer(existingCust);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('پرونده «${existingCust.name}» باز شد.'),
+              backgroundColor: const Color(0xFF0284C7),
+            ),
+          );
+        },
         onSave: (name, phone) {
           setState(() {
             if (customer == null) {
@@ -669,6 +744,17 @@ class _HomeScreenState extends State<HomeScreen> {
       context: context,
       builder: (ctx) => _CarEditDialog(
         carToEdit: carToEdit,
+        customer: customer,
+        existingCustomers: widget.customers,
+        onNavigateToCarOwner: (ownerCust, existingCar) {
+          _focusOnCustomer(ownerCust);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('پرونده «${ownerCust.name}» (خودروی ${existingCar.model}) باز شد.'),
+              backgroundColor: const Color(0xFF0284C7),
+            ),
+          );
+        },
         onSave: (model, two, letter, three, prov) {
           setState(() {
             if (carToEdit == null) {
@@ -861,7 +947,6 @@ class DebtorsScreen extends StatelessWidget {
     );
   }
 
-  // حل قطعی کاراکتر + با متد encodeComponent
   Future<void> _sendDebtReminderSms(Customer c, BuildContext context) async {
     final cleanPhone = NumberHelper.cleanNumbers(c.phone);
     if (cleanPhone.isEmpty) {
@@ -1062,7 +1147,6 @@ class _CarServicesScreenState extends State<CarServicesScreen> {
     );
   }
 
-  // حل قطعی کاراکتر + با متد encodeComponent
   Future<void> _sendSmsNotification(ServiceRecord s) async {
     final cleanPhone = NumberHelper.cleanNumbers(widget.customer.phone);
     if (cleanPhone.isEmpty) {
@@ -1115,16 +1199,13 @@ class _CarServicesScreenState extends State<CarServicesScreen> {
     );
   }
 
-  // لودر هوشمند فونت جهت جلوگیری قطعی از مربع شدن حروف فارسی
   Future<pw.Font> _resolvePdfFont({required bool isBold}) async {
-    // مرحله اول: تلاش برای خواندن مستقیم از Assets پروژه (آفلاین ۱۰۰٪)
     try {
       final assetPath = isBold ? 'assets/fonts/Vazirmatn-Bold.ttf' : 'assets/fonts/Vazirmatn-Regular.ttf';
       final byteData = await rootBundle.load(assetPath);
       return pw.Font.ttf(byteData);
     } catch (_) {}
 
-    // مرحله دوم: دریافت آنلاین از گوگل فونت در صورت عدم وجود فایل در Assets
     try {
       if (isBold) {
         return await PdfGoogleFonts.vazirmatnBold();
@@ -1133,7 +1214,6 @@ class _CarServicesScreenState extends State<CarServicesScreen> {
       }
     } catch (_) {}
 
-    // مرحله سوم: دریافت فونت پشتیبان عربی/فارسی
     try {
       return await PdfGoogleFonts.notoSansArabicRegular();
     } catch (_) {
@@ -1148,7 +1228,6 @@ class _CarServicesScreenState extends State<CarServicesScreen> {
       final font = await _resolvePdfFont(isBold: false);
       final fontBold = await _resolvePdfFont(isBold: true);
 
-      // استفاده از استاندارد عرض ۸۰ میلی‌متری مخصوص فیش پرینترها
       final pageFormat = isThermal ? PdfPageFormat.roll80 : PdfPageFormat.a4;
 
       pdf.addPage(
@@ -1494,12 +1573,20 @@ class _ServiceEditDialogState extends State<_ServiceEditDialog> {
   }
 }
 
-// ======================== دیالوگ مشتری و خودرو ========================
+// ======================== دیالوگ مشتری و خودرو با بررسی عدم تکرار ========================
 class _CustomerEditDialog extends StatefulWidget {
   final Customer? customer;
+  final List<Customer> existingCustomers;
+  final Function(Customer) onNavigateToCustomer;
   final Function(String name, String phone) onSave;
 
-  const _CustomerEditDialog({this.customer, required this.onSave});
+  const _CustomerEditDialog({
+    super.key,
+    this.customer,
+    required this.existingCustomers,
+    required this.onNavigateToCustomer,
+    required this.onSave,
+  });
 
   @override
   State<_CustomerEditDialog> createState() => _CustomerEditDialogState();
@@ -1523,6 +1610,106 @@ class _CustomerEditDialogState extends State<_CustomerEditDialog> {
     super.dispose();
   }
 
+  void _handleSave() {
+    final name = nameCtrl.text.trim();
+    final rawPhone = phoneCtrl.text.trim();
+    final cleanPhone = NumberHelper.cleanNumbers(rawPhone);
+    final normPhone = NumberHelper.normalizePhone(rawPhone);
+
+    if (name.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('لطفاً نام و نام خانوادگی را وارد کنید.')),
+      );
+      return;
+    }
+
+    // بررسی عدم تکراری بودن شماره تلفن
+    if (normPhone.isNotEmpty) {
+      Customer? duplicateCust;
+      for (final c in widget.existingCustomers) {
+        if (widget.customer != null && c.id == widget.customer!.id) continue;
+        final cNorm = NumberHelper.normalizePhone(c.phone);
+        if (cNorm.isNotEmpty && cNorm == normPhone) {
+          duplicateCust = c;
+          break;
+        }
+      }
+
+      if (duplicateCust != null) {
+        final foundCust = duplicateCust;
+        showDialog(
+          context: context,
+          builder: (dCtx) => AlertDialog(
+            backgroundColor: const Color(0xFF1E293B),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: const Row(
+              children: [
+                Icon(Icons.warning_amber_rounded, color: Colors.amberAccent, size: 28),
+                SizedBox(width: 8),
+                Text('شماره تماس تکراری', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              ],
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'این شماره تماس قبلاً در سیستم ثبت شده است:',
+                  style: TextStyle(fontSize: 13, color: Colors.white70),
+                ),
+                const SizedBox(height: 10),
+                Container(
+                  width: double.maxFinite,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0F172A),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.white12),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('👤 نام مشتری: ${foundCust.name}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                      const SizedBox(height: 4),
+                      Text('📞 شماره تماس: ${foundCust.phone}', style: const TextStyle(fontSize: 12, color: Colors.cyanAccent)),
+                      const SizedBox(height: 4),
+                      Text('🚗 تعداد خودروها: ${foundCust.cars.length} خودرو', style: const TextStyle(fontSize: 12, color: Colors.amberAccent)),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 10),
+                const Text(
+                  'امکان ثبت یک شماره برای دو پرونده مجزا وجود ندارد.',
+                  style: TextStyle(fontSize: 12, color: Colors.white60),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dCtx),
+                child: const Text('ویرایش شماره'),
+              ),
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0284C7)),
+                icon: const Icon(Icons.person_search, size: 18),
+                label: Text('رفتن به پرونده ${foundCust.name}'),
+                onPressed: () {
+                  Navigator.pop(dCtx); // بستن دیالوگ هشدار
+                  Navigator.pop(context); // بستن دیالوگ ویرایش
+                  widget.onNavigateToCustomer(foundCust);
+                },
+              ),
+            ],
+          ),
+        );
+        return;
+      }
+    }
+
+    widget.onSave(name, cleanPhone);
+    Navigator.pop(context);
+  }
+
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
@@ -1537,12 +1724,7 @@ class _CustomerEditDialogState extends State<_CustomerEditDialog> {
       actions: [
         TextButton(onPressed: () => Navigator.pop(context), child: const Text('انصراف')),
         ElevatedButton(
-          onPressed: () {
-            if (nameCtrl.text.trim().isNotEmpty) {
-              widget.onSave(nameCtrl.text.trim(), NumberHelper.cleanNumbers(phoneCtrl.text));
-              Navigator.pop(context);
-            }
-          },
+          onPressed: _handleSave,
           child: const Text('ذخیره'),
         )
       ],
@@ -1552,9 +1734,19 @@ class _CustomerEditDialogState extends State<_CustomerEditDialog> {
 
 class _CarEditDialog extends StatefulWidget {
   final Car? carToEdit;
+  final Customer customer;
+  final List<Customer> existingCustomers;
+  final Function(Customer owner, Car existingCar) onNavigateToCarOwner;
   final Function(String model, String two, String letter, String three, String prov) onSave;
 
-  const _CarEditDialog({this.carToEdit, required this.onSave});
+  const _CarEditDialog({
+    super.key,
+    this.carToEdit,
+    required this.customer,
+    required this.existingCustomers,
+    required this.onNavigateToCarOwner,
+    required this.onSave,
+  });
 
   @override
   State<_CarEditDialog> createState() => _CarEditDialogState();
@@ -1587,6 +1779,119 @@ class _CarEditDialogState extends State<_CarEditDialog> {
     super.dispose();
   }
 
+  void _handleSave() {
+    final model = modelCtrl.text.trim();
+    final two = NumberHelper.cleanNumbers(twoCtrl.text);
+    final letter = letterCtrl.text.trim();
+    final three = NumberHelper.cleanNumbers(threeCtrl.text);
+    final prov = NumberHelper.cleanNumbers(provCtrl.text);
+
+    if (model.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('لطفاً مدل خودرو را وارد کنید.')),
+      );
+      return;
+    }
+
+    // بررسی تکراری نبودن پلاک در کل سیستم
+    if (two.isNotEmpty && three.isNotEmpty) {
+      Customer? ownerOfDuplicate;
+      Car? duplicateCar;
+
+      for (final cust in widget.existingCustomers) {
+        for (final car in cust.cars) {
+          // اگر در حال ویرایش همین ماشین هستیم، از بررسی رد شود
+          if (widget.carToEdit != null && car.id == widget.carToEdit!.id) continue;
+
+          if (car.matchesPlate(two, letter, three, prov)) {
+            ownerOfDuplicate = cust;
+            duplicateCar = car;
+            break;
+          }
+        }
+        if (duplicateCar != null) break;
+      }
+
+      if (duplicateCar != null && ownerOfDuplicate != null) {
+        final foundCar = duplicateCar;
+        final foundOwner = ownerOfDuplicate;
+        showDialog(
+          context: context,
+          builder: (dCtx) => AlertDialog(
+            backgroundColor: const Color(0xFF1E293B),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: const Row(
+              children: [
+                Icon(Icons.warning_amber_rounded, color: Colors.amberAccent, size: 28),
+                SizedBox(width: 8),
+                Text('پلاک خودرو تکراری است', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              ],
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'این شماره پلاک قبلاً برای خودروی دیگری در سیستم ثبت شده است:',
+                  style: TextStyle(fontSize: 13, color: Colors.white70),
+                ),
+                const SizedBox(height: 10),
+                Container(
+                  width: double.maxFinite,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0F172A),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.white12),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('🚗 خودرو: ${foundCar.model}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.amberAccent)),
+                      const SizedBox(height: 4),
+                      Text('🔢 پلاک: ${foundCar.fullPlate}', style: const TextStyle(fontSize: 13, color: Colors.cyanAccent)),
+                      const SizedBox(height: 4),
+                      Text('👤 متعلق به مشتری: ${foundOwner.name}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                      if (foundOwner.phone.isNotEmpty) ...[
+                        const SizedBox(height: 2),
+                        Text('📞 شماره تماس: ${foundOwner.phone}', style: const TextStyle(fontSize: 11, color: Colors.white70)),
+                      ],
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 10),
+                const Text(
+                  'شماره پلاک در کل سیستم باید یکتا باشد.',
+                  style: TextStyle(fontSize: 12, color: Colors.white60),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dCtx),
+                child: const Text('اصلاح پلاک'),
+              ),
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0284C7)),
+                icon: const Icon(Icons.person_search, size: 18),
+                label: Text('مشاهده پرونده ${foundOwner.name}'),
+                onPressed: () {
+                  Navigator.pop(dCtx); // بستن دیالوگ هشدار
+                  Navigator.pop(context); // بستن دیالوگ ویرایش خودرو
+                  widget.onNavigateToCarOwner(foundOwner, foundCar);
+                },
+              ),
+            ],
+          ),
+        );
+        return;
+      }
+    }
+
+    widget.onSave(model, two, letter, three, prov);
+    Navigator.pop(context);
+  }
+
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
@@ -1614,12 +1919,7 @@ class _CarEditDialogState extends State<_CarEditDialog> {
       actions: [
         TextButton(onPressed: () => Navigator.pop(context), child: const Text('انصراف')),
         ElevatedButton(
-          onPressed: () {
-            if (modelCtrl.text.trim().isNotEmpty) {
-              widget.onSave(modelCtrl.text.trim(), NumberHelper.cleanNumbers(twoCtrl.text), letterCtrl.text.trim(), NumberHelper.cleanNumbers(threeCtrl.text), NumberHelper.cleanNumbers(provCtrl.text));
-              Navigator.pop(context);
-            }
-          },
+          onPressed: _handleSave,
           child: const Text('ذخیره'),
         )
       ],
@@ -1731,7 +2031,6 @@ class _BulkSmsScreenState extends State<BulkSmsScreen> {
                     style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0284C7), padding: const EdgeInsets.symmetric(vertical: 12)),
                     icon: const Icon(Icons.send),
                     label: const Text('ارسال پیامک'),
-                    // حل مشکل + در پیامک گروهی
                     onPressed: () async {
                       if (phones.isEmpty) return;
                       final isIos = !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;

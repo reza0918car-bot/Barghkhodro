@@ -1,14 +1,14 @@
-- run: flutter pub run flutter_launcher_icons
-name: Build Android APK
+name: Build APK
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ main, master ]
   workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -23,11 +23,16 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
+          cache: true
 
-      - name: Generate Android Skeleton
+      - name: Generate Android Skeleton if needed
         run: |
-          flutter create . --org com.barghkhodro --project-name auto_electric_pro
-          flutter pub get
+          if [ ! -d "android" ]; then
+            flutter create . --org com.barghkhodro --project-name auto_electric_pro
+          fi
+
+      - name: Install Dependencies
+        run: flutter pub get
 
       - name: Build APK
         run: flutter build apk --release
@@ -35,5 +40,5 @@ jobs:
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: AutoElectric-App
+          name: bargh-khodro-mohandes-apk
           path: build/app/outputs/flutter-apk/app-release.apk

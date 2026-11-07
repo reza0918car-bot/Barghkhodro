@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -14,7 +15,27 @@ void main() {
   runApp(const AutoElectricApp());
 }
 
-// ======================== تقویم شمسی ========================
+// ======================== ابزارهای کمکی (تبدیل اعداد و تقویم) ========================
+class NumberHelper {
+  /// تبدیل ارقام فارسی و عربی به ارقام استاندارد انگلیسی و حذف کاراکترهای اضافه
+  static String cleanNumbers(String input) {
+    const farsi = ['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹'];
+    const arabic = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
+    const english = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
+
+    String res = input.trim();
+    for (int i = 0; i < 10; i++) {
+      res = res.replaceAll(farsi[i], english[i]).replaceAll(arabic[i], english[i]);
+    }
+    return res.replaceAll(',', '').replaceAll(' ', '');
+  }
+
+  static int safeParseInt(String input) {
+    final cleaned = cleanNumbers(input);
+    return int.tryParse(cleaned) ?? 0;
+  }
+}
+
 class JalaliHelper {
   static String nowShamsi() {
     final now = DateTime.now();
@@ -27,12 +48,12 @@ class JalaliHelper {
   }
 
   static String gregorianToJalali(int gy, int gm, int gd) {
-    List<int> g_d_m = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334];
+    List<int> gDM = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334];
     int jy = (gy <= 1600) ? 0 : 979;
     gy -= (gy <= 1600) ? 621 : 1600;
     int gy2 = (gm > 2) ? (gy + 1) : gy;
     int days = (365 * gy) + ((gy2 + 3) ~/ 4) - ((gy2 + 99) ~/ 100) +
-        ((gy2 + 399) ~/ 400) - 80 + gd + g_d_m[gm - 1];
+        ((gy2 + 399) ~/ 400) - 80 + gd + gDM[gm - 1];
     jy += 33 * (days ~/ 12053);
     days %= 12053;
     jy += 4 * (days ~/ 1461);
@@ -94,8 +115,8 @@ class ServiceRecord {
   int get partsTotal => parts.fold(0, (sum, item) => sum + item.price);
   int get grandTotal => laborTotal + partsTotal;
 
-  String get summaryTitle => labors.isNotEmpty 
-      ? labors.map((l) => l.title).join(' ، ') 
+  String get summaryTitle => labors.isNotEmpty
+      ? labors.map((l) => l.title).join(' ، ')
       : 'خدمات عمومی برق خودرو';
 
   Map<String, dynamic> toMap() => {
@@ -234,6 +255,7 @@ class MainNavigationScreen extends StatefulWidget {
 class _MainNavigationScreenState extends State<MainNavigationScreen> {
   int _currentIndex = 0;
   List<Customer> customers = [];
+  bool _isLoading = true;
 
   @override
   void initState() {
@@ -245,21 +267,33 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     final prefs = await SharedPreferences.getInstance();
     final String? raw = prefs.getString('customers_data_v6');
     if (raw != null) {
-      final List decoded = jsonDecode(raw);
-      setState(() {
-        customers = decoded.map((e) => Customer.fromMap(e)).toList();
-      });
+      try {
+        final List decoded = jsonDecode(raw);
+        setState(() {
+          customers = decoded.map((e) => Customer.fromMap(e)).toList();
+          _isLoading = false;
+        });
+        return;
+      } catch (e) {
+        debugPrint('Error decoding storage: $e');
+      }
     }
+    setState(() => _isLoading = false);
   }
 
   Future<void> _saveData() async {
     final prefs = await SharedPreferences.getInstance();
     final String encoded = jsonEncode(customers.map((c) => c.toMap()).toList());
     await prefs.setString('customers_data_v6', encoded);
+    setState(() {});
   }
 
   @override
   Widget build(BuildContext context) {
+    if (_isLoading) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+
     final screens = [
       HomeScreen(customers: customers, onDataChanged: _saveData),
       DailyReportScreen(customers: customers),
@@ -282,7 +316,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   }
 }
 
-// ======================== صفحه اصلی و میز کار ========================
+// ======================== صفحه اصلی ========================
 class HomeScreen extends StatefulWidget {
   final List<Customer> customers;
   final VoidCallback onDataChanged;
@@ -317,10 +351,9 @@ class _HomeScreenState extends State<HomeScreen> {
         centerTitle: true,
         backgroundColor: const Color(0xFF1E293B),
         actions: [
-          // دکمه پیامک گروهی و باشگاه مشتریان
           IconButton(
             icon: const Icon(Icons.campaign, color: Colors.amberAccent, size: 26),
-            tooltip: 'پیامک گروهی و شماره مشتریان',
+            tooltip: 'پیامک گروهی و باشگاه مشتریان',
             onPressed: () {
               Navigator.push(
                 context,
@@ -339,7 +372,6 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       body: Column(
         children: [
-          // کارت آمار زنده تعداد مشتری‌ها و خودروها
           Container(
             margin: const EdgeInsets.fromLTRB(12, 10, 12, 4),
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
@@ -359,7 +391,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   children: [
                     const Icon(Icons.people_alt, color: Colors.cyanAccent, size: 20),
                     const SizedBox(width: 8),
-                    Text('کل مشتریان: ${widget.customers.length} نفر', 
+                    Text('کل مشتریان: ${widget.customers.length} نفر',
                         style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                   ],
                 ),
@@ -368,7 +400,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   children: [
                     const Icon(Icons.directions_car, color: Colors.amberAccent, size: 20),
                     const SizedBox(width: 8),
-                    Text('کل خودروها: $totalCars دستگاه', 
+                    Text('کل خودروها: $totalCars دستگاه',
                         style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                   ],
                 ),
@@ -387,20 +419,19 @@ class _HomeScreenState extends State<HomeScreen> {
                       color: Colors.amber[800],
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: const Text('ارسال پیامک', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white)),
+                    child: const Text('ارسال پیامک',
+                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white)),
                   ),
                 )
               ],
             ),
           ),
-
-          // کادر جستجو
           Padding(
             padding: const EdgeInsets.all(12.0),
             child: TextField(
               onChanged: (val) => setState(() => searchQuery = val),
               decoration: InputDecoration(
-                hintText: 'جستجو با نام، پلاک، کار انجام شده یا تاریخ...',
+                hintText: 'جستجو با نام، شماره، مدل خودرو یا پلاک...',
                 prefixIcon: const Icon(Icons.search, color: Colors.cyanAccent),
                 filled: true,
                 fillColor: const Color(0xFF1E293B),
@@ -408,7 +439,6 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
           ),
-
           Expanded(
             child: filtered.isEmpty
                 ? const Center(child: Text('پرونده‌ای یافت نشد.', style: TextStyle(color: Colors.grey)))
@@ -452,7 +482,7 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         subtitle: Text('📞 ${customer.phone.isNotEmpty ? customer.phone : 'بدون شماره'}  |  🚗 ${customer.cars.length} خودرو'),
         children: [
-          ...customer.cars.map((car) => _buildCarRow(customer, car)).toList(),
+          ...customer.cars.map((car) => _buildCarRow(customer, car)),
           TextButton.icon(
             icon: const Icon(Icons.add_circle_outline, color: Colors.cyanAccent),
             label: const Text('ثبت خودروی دیگر برای این مشتری'),
@@ -478,18 +508,26 @@ class _HomeScreenState extends State<HomeScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Row(
-                children: [
-                  Text(car.model, style: const TextStyle(color: Colors.amberAccent, fontWeight: FontWeight.bold, fontSize: 15)),
-                  IconButton(
-                    icon: const Icon(Icons.edit, size: 17, color: Colors.white60),
-                    onPressed: () => _openCarDialog(customer: customer, carToEdit: car),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.delete_forever, size: 17, color: Colors.redAccent),
-                    onPressed: () => _confirmDeleteCar(customer, car),
-                  ),
-                ],
+              Expanded(
+                child: Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        car.model,
+                        style: const TextStyle(color: Colors.amberAccent, fontWeight: FontWeight.bold, fontSize: 15),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.edit, size: 17, color: Colors.white60),
+                      onPressed: () => _openCarDialog(customer: customer, carToEdit: car),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.delete_forever, size: 17, color: Colors.redAccent),
+                      onPressed: () => _confirmDeleteCar(customer, car),
+                    ),
+                  ],
+                ),
               ),
               _buildPlateVisual(car),
             ],
@@ -503,20 +541,21 @@ class _HomeScreenState extends State<HomeScreen> {
                 style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0284C7)),
                 icon: const Icon(Icons.receipt_long, size: 16, color: Colors.white),
                 label: const Text('فاکتورها و سوابق', style: TextStyle(color: Colors.white, fontSize: 12)),
-                onPressed: () {
-                  Navigator.push(
+                onPressed: () async {
+                  await Navigator.push(
                     context,
                     MaterialPageRoute(
                       builder: (c) => CarServicesScreen(
                         customer: customer,
                         car: car,
                         onChanged: () {
-                          setState(() {});
                           widget.onDataChanged();
+                          setState(() {});
                         },
                       ),
                     ),
                   );
+                  setState(() {});
                 },
               ),
             ],
@@ -564,48 +603,29 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _openCustomerDialog({Customer? customer}) {
-    final nameCtrl = TextEditingController(text: customer?.name ?? '');
-    final phoneCtrl = TextEditingController(text: customer?.phone ?? '');
-
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(customer == null ? 'ثبت مشتری جدید' : 'ویرایش مشخصات مشتری'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: 'نام و نام خانوادگی')),
-            TextField(controller: phoneCtrl, keyboardType: TextInputType.phone, decoration: const InputDecoration(labelText: 'شماره همراه')),
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('انصراف')),
-          ElevatedButton(
-            onPressed: () {
-              if (nameCtrl.text.trim().isNotEmpty) {
-                setState(() {
-                  if (customer == null) {
-                    widget.customers.insert(
-                      0,
-                      Customer(
-                        id: DateTime.now().millisecondsSinceEpoch.toString(),
-                        name: nameCtrl.text.trim(),
-                        phone: phoneCtrl.text.trim(),
-                        cars: [],
-                      ),
-                    );
-                  } else {
-                    customer.name = nameCtrl.text.trim();
-                    customer.phone = phoneCtrl.text.trim();
-                  }
-                });
-                widget.onDataChanged();
-                Navigator.pop(ctx);
-              }
-            },
-            child: const Text('ذخیره'),
-          )
-        ],
+      builder: (ctx) => _CustomerEditDialog(
+        customer: customer,
+        onSave: (name, phone) {
+          setState(() {
+            if (customer == null) {
+              widget.customers.insert(
+                0,
+                Customer(
+                  id: DateTime.now().millisecondsSinceEpoch.toString(),
+                  name: name,
+                  phone: phone,
+                  cars: [],
+                ),
+              );
+            } else {
+              customer.name = name;
+              customer.phone = phone;
+            }
+          });
+          widget.onDataChanged();
+        },
       ),
     );
   }
@@ -635,69 +655,34 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _openCarDialog({required Customer customer, Car? carToEdit}) {
-    final modelCtrl = TextEditingController(text: carToEdit?.model ?? '');
-    final twoCtrl = TextEditingController(text: carToEdit?.plateTwoDigits ?? '');
-    final letterCtrl = TextEditingController(text: carToEdit?.plateLetter ?? '');
-    final threeCtrl = TextEditingController(text: carToEdit?.plateThreeDigits ?? '');
-    final provCtrl = TextEditingController(text: carToEdit?.plateProvinceCode ?? '');
-
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(carToEdit == null ? 'افزودن خودرو به پرونده' : 'ویرایش مشخصات خودرو'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(controller: modelCtrl, decoration: const InputDecoration(labelText: 'مدل خودرو (مثلاً: دنا پلاس)')),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(child: TextField(controller: provCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(hintText: 'ایران'))),
-                  const SizedBox(width: 4),
-                  Expanded(child: TextField(controller: threeCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(hintText: '۳ رقم'))),
-                  const SizedBox(width: 4),
-                  Expanded(child: TextField(controller: letterCtrl, decoration: const InputDecoration(hintText: 'حرف'))),
-                  const SizedBox(width: 4),
-                  Expanded(child: TextField(controller: twoCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(hintText: '۲ رقم'))),
-                ],
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('انصراف')),
-          ElevatedButton(
-            onPressed: () {
-              if (modelCtrl.text.isNotEmpty) {
-                setState(() {
-                  if (carToEdit == null) {
-                    customer.cars.add(
-                      Car(
-                        id: DateTime.now().millisecondsSinceEpoch.toString(),
-                        model: modelCtrl.text,
-                        plateTwoDigits: twoCtrl.text,
-                        plateLetter: letterCtrl.text,
-                        plateThreeDigits: threeCtrl.text,
-                        plateProvinceCode: provCtrl.text,
-                        services: [],
-                      ),
-                    );
-                  } else {
-                    carToEdit.model = modelCtrl.text;
-                    carToEdit.plateTwoDigits = twoCtrl.text;
-                    carToEdit.plateLetter = letterCtrl.text;
-                    carToEdit.plateThreeDigits = threeCtrl.text;
-                    carToEdit.plateProvinceCode = provCtrl.text;
-                  }
-                });
-                widget.onDataChanged();
-                Navigator.pop(ctx);
-              }
-            },
-            child: const Text('ذخیره'),
-          )
-        ],
+      builder: (ctx) => _CarEditDialog(
+        carToEdit: carToEdit,
+        onSave: (model, two, letter, three, prov) {
+          setState(() {
+            if (carToEdit == null) {
+              customer.cars.add(
+                Car(
+                  id: DateTime.now().millisecondsSinceEpoch.toString(),
+                  model: model,
+                  plateTwoDigits: two,
+                  plateLetter: letter,
+                  plateThreeDigits: three,
+                  plateProvinceCode: prov,
+                  services: [],
+                ),
+              );
+            } else {
+              carToEdit.model = model;
+              carToEdit.plateTwoDigits = two;
+              carToEdit.plateLetter = letter;
+              carToEdit.plateThreeDigits = three;
+              carToEdit.plateProvinceCode = prov;
+            }
+          });
+          widget.onDataChanged();
+        },
       ),
     );
   }
@@ -742,7 +727,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 Clipboard.setData(ClipboardData(text: encoded));
                 Navigator.pop(ctx);
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('کد پشتیبان کپی شد! می‌توانید آن را در تلگرام ذخیره کنید.')),
+                  const SnackBar(content: Text('کد پشتیبان کپی شد! می‌توانید آن را ذخیره یا در پیام‌رسان بفرستید.')),
                 );
               },
             ),
@@ -778,7 +763,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ElevatedButton(
             onPressed: () {
               try {
-                final List decoded = jsonDecode(codeCtrl.text);
+                final List decoded = jsonDecode(codeCtrl.text.trim());
                 setState(() {
                   widget.customers.clear();
                   widget.customers.addAll(decoded.map((e) => Customer.fromMap(e)).toList());
@@ -794,6 +779,149 @@ class _HomeScreenState extends State<HomeScreen> {
           )
         ],
       ),
+    );
+  }
+}
+
+// ======================== دیالوگ‌های مستقل با مدیریت حافظه ========================
+class _CustomerEditDialog extends StatefulWidget {
+  final Customer? customer;
+  final Function(String name, String phone) onSave;
+
+  const _CustomerEditDialog({this.customer, required this.onSave});
+
+  @override
+  State<_CustomerEditDialog> createState() => _CustomerEditDialogState();
+}
+
+class _CustomerEditDialogState extends State<_CustomerEditDialog> {
+  late final TextEditingController nameCtrl;
+  late final TextEditingController phoneCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+    nameCtrl = TextEditingController(text: widget.customer?.name ?? '');
+    phoneCtrl = TextEditingController(text: widget.customer?.phone ?? '');
+  }
+
+  @override
+  void dispose() {
+    nameCtrl.dispose();
+    phoneCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(widget.customer == null ? 'ثبت مشتری جدید' : 'ویرایش مشخصات مشتری'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: 'نام و نام خانوادگی')),
+          TextField(
+            controller: phoneCtrl,
+            keyboardType: TextInputType.phone,
+            decoration: const InputDecoration(labelText: 'شماره همراه'),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('انصراف')),
+        ElevatedButton(
+          onPressed: () {
+            if (nameCtrl.text.trim().isNotEmpty) {
+              widget.onSave(nameCtrl.text.trim(), NumberHelper.cleanNumbers(phoneCtrl.text));
+              Navigator.pop(context);
+            }
+          },
+          child: const Text('ذخیره'),
+        )
+      ],
+    );
+  }
+}
+
+class _CarEditDialog extends StatefulWidget {
+  final Car? carToEdit;
+  final Function(String model, String two, String letter, String three, String prov) onSave;
+
+  const _CarEditDialog({this.carToEdit, required this.onSave});
+
+  @override
+  State<_CarEditDialog> createState() => _CarEditDialogState();
+}
+
+class _CarEditDialogState extends State<_CarEditDialog> {
+  late final TextEditingController modelCtrl;
+  late final TextEditingController twoCtrl;
+  late final TextEditingController letterCtrl;
+  late final TextEditingController threeCtrl;
+  late final TextEditingController provCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+    modelCtrl = TextEditingController(text: widget.carToEdit?.model ?? '');
+    twoCtrl = TextEditingController(text: widget.carToEdit?.plateTwoDigits ?? '');
+    letterCtrl = TextEditingController(text: widget.carToEdit?.plateLetter ?? '');
+    threeCtrl = TextEditingController(text: widget.carToEdit?.plateThreeDigits ?? '');
+    provCtrl = TextEditingController(text: widget.carToEdit?.plateProvinceCode ?? '');
+  }
+
+  @override
+  void dispose() {
+    modelCtrl.dispose();
+    twoCtrl.dispose();
+    letterCtrl.dispose();
+    threeCtrl.dispose();
+    provCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(widget.carToEdit == null ? 'افزودن خودرو به پرونده' : 'ویرایش مشخصات خودرو'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(controller: modelCtrl, decoration: const InputDecoration(labelText: 'مدل خودرو (مثلاً: دنا پلاس)')),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(child: TextField(controller: provCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(hintText: 'ایران'))),
+                const SizedBox(width: 4),
+                Expanded(child: TextField(controller: threeCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(hintText: '۳ رقم'))),
+                const SizedBox(width: 4),
+                Expanded(child: TextField(controller: letterCtrl, decoration: const InputDecoration(hintText: 'حرف'))),
+                const SizedBox(width: 4),
+                Expanded(child: TextField(controller: twoCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(hintText: '۲ رقم'))),
+              ],
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('انصراف')),
+        ElevatedButton(
+          onPressed: () {
+            if (modelCtrl.text.trim().isNotEmpty) {
+              widget.onSave(
+                modelCtrl.text.trim(),
+                NumberHelper.cleanNumbers(twoCtrl.text),
+                letterCtrl.text.trim(),
+                NumberHelper.cleanNumbers(threeCtrl.text),
+                NumberHelper.cleanNumbers(provCtrl.text),
+              );
+              Navigator.pop(context);
+            }
+          },
+          child: const Text('ذخیره'),
+        )
+      ],
     );
   }
 }
@@ -820,10 +948,16 @@ class _BulkSmsScreenState extends State<BulkSmsScreen> {
         'تلفن: [شماره تماس شما]';
   }
 
+  @override
+  void dispose() {
+    _msgCtrl.dispose();
+    super.dispose();
+  }
+
   List<String> _getValidPhones() {
     final Set<String> phones = {};
     for (var c in widget.customers) {
-      final p = c.phone.replaceAll(' ', '').trim();
+      final p = NumberHelper.cleanNumbers(c.phone);
       if (p.isNotEmpty && p.length >= 10) {
         phones.add(p);
       }
@@ -840,7 +974,7 @@ class _BulkSmsScreenState extends State<BulkSmsScreen> {
     final text = phones.join(withComma ? ', ' : '\n');
     Clipboard.setData(ClipboardData(text: text));
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('${phones.length} شماره تماس با موفقیت کپی شد!')),
+      SnackBar(content: Text('${phones.length} شماره تماس کپی شد!')),
     );
   }
 
@@ -851,16 +985,32 @@ class _BulkSmsScreenState extends State<BulkSmsScreen> {
       return;
     }
 
-    final recipients = phones.join(',');
-    final uri = Uri.parse('sms:$recipients?body=${Uri.encodeComponent(_msgCtrl.text)}');
-    try {
-      await launchUrl(uri);
-    } catch (e) {
-      // در صورتی که سیستم‌عامل اجازه ارسال بیش از حد در URL ندهد، شماره‌ها را کپی می‌کنیم
+    // بررسی تعداد شماره‌ها برای جلوگیری از شکست باز شدن پروتکل در سیستم‌عامل
+    if (phones.length > 25) {
       _copyAllNumbers(withComma: true);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('شماره‌ها کپی شدند. به دلیل محدودیت گوشی، می‌توانید در برنامه پیامک Paste کنید.')),
+        const SnackBar(content: Text('تعداد شماره‌ها زیاد است. شماره‌ها در کلیپ‌بورد کپی شدند تا مستقیماً در نرم‌افزار پیامک Paste کنید.')),
       );
+      return;
+    }
+
+    final isIos = !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
+    final separator = isIos ? ';' : ',';
+    final recipients = phones.join(separator);
+    final uri = Uri(
+      scheme: 'sms',
+      path: recipients,
+      queryParameters: {'body': _msgCtrl.text},
+    );
+
+    try {
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri);
+      } else {
+        _copyAllNumbers(withComma: true);
+      }
+    } catch (e) {
+      _copyAllNumbers(withComma: true);
     }
   }
 
@@ -878,7 +1028,6 @@ class _BulkSmsScreenState extends State<BulkSmsScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // کارت خلاصه تعداد شماره‌ها
             Container(
               padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
@@ -894,7 +1043,7 @@ class _BulkSmsScreenState extends State<BulkSmsScreen> {
                     children: [
                       const Text('تعداد شماره‌های آماده ارسال:', style: TextStyle(color: Colors.white70, fontSize: 13)),
                       const SizedBox(height: 4),
-                      Text('${phones.length} شماره فعال و بدون تکرار', 
+                      Text('${phones.length} شماره فعال و بدون تکرار',
                           style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.greenAccent)),
                     ],
                   ),
@@ -902,12 +1051,9 @@ class _BulkSmsScreenState extends State<BulkSmsScreen> {
                 ],
               ),
             ),
-
             const SizedBox(height: 16),
             const Text('متن پیامک ارسالی:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
             const SizedBox(height: 8),
-
-            // کادر ویرایش متن
             TextField(
               controller: _msgCtrl,
               maxLines: 5,
@@ -917,12 +1063,9 @@ class _BulkSmsScreenState extends State<BulkSmsScreen> {
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
               ),
             ),
-
             const SizedBox(height: 12),
             const Text('نمونه متن‌های آماده:', style: TextStyle(fontSize: 12, color: Colors.grey)),
             const SizedBox(height: 6),
-
-            // قالب‌های آماده
             Wrap(
               spacing: 8,
               runSpacing: 8,
@@ -955,18 +1098,15 @@ class _BulkSmsScreenState extends State<BulkSmsScreen> {
                   label: const Text('❄️ تست رایگان باتری و دینام'),
                   onPressed: () {
                     setState(() {
-                      _msgCtrl.text = 'طرح زمستانه برق خودرو مهندس:\n'
-                          'تست رایگان باتری، دینام و سلامت سیستم شارژ قبل از فصل سرما.\n'
+                      _msgCtrl.text = 'طرح فصلی برق خودرو مهندس:\n'
+                          'تست رایگان باتری، دینام و سلامت سیستم شارژ با دستگاه دیجیتال.\n'
                           'آدرس: [آدرس کارگاه]';
                     });
                   },
                 ),
               ],
             ),
-
             const SizedBox(height: 20),
-
-            // دکمه‌های عملیاتی
             Row(
               children: [
                 Expanded(
@@ -994,30 +1134,26 @@ class _BulkSmsScreenState extends State<BulkSmsScreen> {
                 ),
               ],
             ),
-
             const SizedBox(height: 10),
             Center(
               child: TextButton.icon(
                 icon: const Icon(Icons.list_alt, size: 18),
-                label: const Text('کپی شماره‌ها خط‌به‌خط (برای اکسل یا دفترچه تلفن)'),
+                label: const Text('کپی شماره‌ها خط‌به‌خط (جهت اکسل)'),
                 onPressed: () => _copyAllNumbers(withComma: false),
               ),
             ),
-
             const Divider(height: 24),
             const Text('لیست مشتریان و شماره‌ها:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
             const SizedBox(height: 6),
-
-            // نمایش لیست شماره‌ها
             ...widget.customers.where((c) => c.phone.trim().isNotEmpty).map((c) => Card(
-              margin: const EdgeInsets.symmetric(vertical: 3),
-              child: ListTile(
-                dense: true,
-                leading: const Icon(Icons.phone_android, color: Colors.cyanAccent, size: 20),
-                title: Text(c.name, style: const TextStyle(fontWeight: FontWeight.bold)),
-                trailing: Text(c.phone, style: const TextStyle(color: Colors.amberAccent, fontWeight: FontWeight.bold)),
-              ),
-            )),
+                  margin: const EdgeInsets.symmetric(vertical: 3),
+                  child: ListTile(
+                    dense: true,
+                    leading: const Icon(Icons.phone_android, color: Colors.cyanAccent, size: 20),
+                    title: Text(c.name, style: const TextStyle(fontWeight: FontWeight.bold)),
+                    trailing: Text(c.phone, style: const TextStyle(color: Colors.amberAccent, fontWeight: FontWeight.bold)),
+                  ),
+                )),
           ],
         ),
       ),
@@ -1064,27 +1200,35 @@ class _CarServicesScreenState extends State<CarServicesScreen> {
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
                             Text('📅 تاریخ: ${s.date}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.amberAccent)),
-                            IconButton(
-                              icon: const Icon(Icons.delete_outline, size: 20, color: Colors.redAccent),
-                              onPressed: () => _confirmDeleteService(s),
+                            Row(
+                              children: [
+                                IconButton(
+                                  icon: const Icon(Icons.edit, size: 20, color: Colors.cyanAccent),
+                                  tooltip: 'ویرایش فاکتور',
+                                  onPressed: () => _openServiceDialog(serviceToEdit: s),
+                                ),
+                                IconButton(
+                                  icon: const Icon(Icons.delete_outline, size: 20, color: Colors.redAccent),
+                                  tooltip: 'حذف فاکتور',
+                                  onPressed: () => _confirmDeleteService(s),
+                                ),
+                              ],
                             ),
                           ],
                         ),
                         const Divider(height: 16),
-                        
-                        // ۱. لیست اجرت‌ها
                         const Text('🔧 خدمات و اجرت‌های انجام شده:', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.cyanAccent, fontSize: 13)),
                         const SizedBox(height: 6),
                         ...s.labors.map((l) => Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 2.0),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text('• ${l.title}', style: const TextStyle(fontSize: 13)),
-                              Text(formatToman(l.cost), style: const TextStyle(fontSize: 13, color: Colors.white70)),
-                            ],
-                          ),
-                        )),
+                              padding: const EdgeInsets.symmetric(vertical: 2.0),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text('• ${l.title}', style: const TextStyle(fontSize: 13)),
+                                  Text(formatToman(l.cost), style: const TextStyle(fontSize: 13, color: Colors.white70)),
+                                ],
+                              ),
+                            )),
                         const SizedBox(height: 4),
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -1094,21 +1238,19 @@ class _CarServicesScreenState extends State<CarServicesScreen> {
                           ],
                         ),
                         const Divider(height: 16),
-
-                        // ۲. لیست قطعات
                         if (s.parts.isNotEmpty) ...[
                           const Text('🔩 قطعات و لوازم مصرفی:', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.amberAccent, fontSize: 13)),
                           const SizedBox(height: 6),
                           ...s.parts.map((p) => Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 2.0),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text('• ${p.name}', style: const TextStyle(fontSize: 13)),
-                                Text(formatToman(p.price), style: const TextStyle(fontSize: 13, color: Colors.white70)),
-                              ],
-                            ),
-                          )),
+                                padding: const EdgeInsets.symmetric(vertical: 2.0),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Text('• ${p.name}', style: const TextStyle(fontSize: 13)),
+                                    Text(formatToman(p.price), style: const TextStyle(fontSize: 13, color: Colors.white70)),
+                                  ],
+                                ),
+                              )),
                           const SizedBox(height: 4),
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -1119,8 +1261,6 @@ class _CarServicesScreenState extends State<CarServicesScreen> {
                           ),
                           const Divider(height: 16),
                         ],
-
-                        // ۳. جمع کل فاکتور
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
@@ -1157,7 +1297,7 @@ class _CarServicesScreenState extends State<CarServicesScreen> {
         backgroundColor: const Color(0xFF0284C7),
         icon: const Icon(Icons.note_add, color: Colors.white),
         label: const Text('ثبت فاکتور جدید', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-        onPressed: _openAddServiceDialog,
+        onPressed: () => _openServiceDialog(),
       ),
     );
   }
@@ -1167,19 +1307,34 @@ class _CarServicesScreenState extends State<CarServicesScreen> {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('شماره همراه مشتری ثبت نشده است!')));
       return;
     }
-    
+
     final laborsText = s.labors.map((l) => l.title).join('، ');
     final msg = 'مشتری گرامی ${widget.customer.name}\n'
         'خودروی ${widget.car.model} (${widget.car.fullPlate}) آماده تحویل است.\n'
         'خدمات: $laborsText\n'
         'مبلغ کل فاکتور: ${formatToman(s.grandTotal)}\n'
-        '⚡ برق خودرو مهندس';
+        '⚡ کلینیک برق خودرو مهندس';
 
-    final uri = Uri.parse('sms:${widget.customer.phone}?body=${Uri.encodeComponent(msg)}');
+    final uri = Uri(
+      scheme: 'sms',
+      path: NumberHelper.cleanNumbers(widget.customer.phone),
+      queryParameters: {'body': msg},
+    );
+
     try {
-      await launchUrl(uri);
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri);
+      } else {
+        Clipboard.setData(ClipboardData(text: msg));
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('متن پیامک کپی شد.')));
+        }
+      }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('برنامه پیامک گوشی باز نشد.')));
+      Clipboard.setData(ClipboardData(text: msg));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('متن پیامک در کلیپ‌بورد کپی شد.')));
+      }
     }
   }
 
@@ -1210,18 +1365,23 @@ class _CarServicesScreenState extends State<CarServicesScreen> {
   Future<void> _printPdfInvoice(ServiceRecord service) async {
     try {
       final pdf = pw.Document();
-      
-      // دانلود یا لود فونت فارسی (هر دو حالت عادی و ضخیم برای جلوگیری از به هم ریختگی)
-      final font = await PdfGoogleFonts.vazirmatnRegular();
-      final fontBold = await PdfGoogleFonts.vazirmatnBold();
+
+      // لود ایمن فونت فارسی با مکانیزم Fallback برای زمان قطعی اینترنت
+      pw.Font font;
+      pw.Font fontBold;
+      try {
+        font = await PdfGoogleFonts.vazirmatnRegular();
+        fontBold = await PdfGoogleFonts.vazirmatnBold();
+      } catch (_) {
+        // در صورت عدم دسترسی به اینترنت فونت سیستمی استفاده می‌شود
+        font = pw.Font.helvetica();
+        fontBold = pw.Font.helveticaBold();
+      }
 
       pdf.addPage(
         pw.Page(
           pageFormat: PdfPageFormat.a4,
-          theme: pw.ThemeData.withFont(
-            base: font,
-            bold: fontBold, // جلوگیری از سوییچ به Helvetica
-          ),
+          theme: pw.ThemeData.withFont(base: font, bold: fontBold),
           textDirection: pw.TextDirection.rtl,
           build: (pw.Context context) {
             return pw.Directionality(
@@ -1232,7 +1392,7 @@ class _CarServicesScreenState extends State<CarServicesScreen> {
                   crossAxisAlignment: pw.CrossAxisAlignment.start,
                   children: [
                     pw.Center(
-                      child: pw.Text('صورت‌حساب کلینیک برق خودرو مهندس', 
+                      child: pw.Text('صورت‌حساب کلینیک برق خودرو مهندس',
                           style: pw.TextStyle(font: fontBold, fontSize: 18, fontWeight: pw.FontWeight.bold)),
                     ),
                     pw.SizedBox(height: 16),
@@ -1253,8 +1413,6 @@ class _CarServicesScreenState extends State<CarServicesScreen> {
                       ],
                     ),
                     pw.Divider(thickness: 1.2, height: 25),
-
-                    // لیست اجرت‌ها
                     pw.Text('🔧 خدمات و اجرت‌های انجام شده:', style: pw.TextStyle(font: fontBold, fontWeight: pw.FontWeight.bold, fontSize: 13)),
                     pw.SizedBox(height: 6),
                     ...service.labors.map((l) => pw.Padding(
@@ -1276,8 +1434,6 @@ class _CarServicesScreenState extends State<CarServicesScreen> {
                       ],
                     ),
                     pw.Divider(height: 16),
-
-                    // لیست قطعات
                     if (service.parts.isNotEmpty) ...[
                       pw.Text('🔩 قطعات و لوازم مصرفی:', style: pw.TextStyle(font: fontBold, fontWeight: pw.FontWeight.bold, fontSize: 13)),
                       pw.SizedBox(height: 6),
@@ -1301,7 +1457,6 @@ class _CarServicesScreenState extends State<CarServicesScreen> {
                       ),
                       pw.Divider(height: 16),
                     ],
-
                     pw.SizedBox(height: 10),
                     pw.Container(
                       padding: const pw.EdgeInsets.all(10),
@@ -1335,236 +1490,300 @@ class _CarServicesScreenState extends State<CarServicesScreen> {
         name: 'فاکتور_${widget.customer.name}_${service.date}',
       );
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('خطا در صدور PDF: $e'), backgroundColor: Colors.redAccent),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('خطا در صدور PDF: $e'), backgroundColor: Colors.redAccent),
+        );
+      }
     }
   }
 
-  void _openAddServiceDialog() {
-    final dateCtrl = TextEditingController(text: JalaliHelper.nowShamsi());
-    final List<LaborItem> laborsList = [];
-    final List<PartItem> partsList = [];
-
+  void _openServiceDialog({ServiceRecord? serviceToEdit}) {
     showDialog(
       context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (context, setDialogState) {
-          int currentLaborTotal = laborsList.fold(0, (sum, i) => sum + i.cost);
-          int currentPartsTotal = partsList.fold(0, (sum, i) => sum + i.price);
-          int currentGrandTotal = currentLaborTotal + currentPartsTotal;
+      builder: (ctx) => _ServiceEditDialog(
+        serviceToEdit: serviceToEdit,
+        onSave: (record) {
+          setState(() {
+            if (serviceToEdit == null) {
+              widget.car.services.insert(0, record);
+            } else {
+              serviceToEdit.date = record.date;
+              serviceToEdit.labors = record.labors;
+              serviceToEdit.parts = record.parts;
+            }
+          });
+          widget.onChanged();
+        },
+      ),
+    );
+  }
+}
 
-          return AlertDialog(
-            title: const Text('ثبت خدمات و فاکتور جدید'),
-            content: SizedBox(
-              width: double.maxFinite,
-              child: SingleChildScrollView(
+// ======================== دیالوگ ثبت و ویرایش فاکتور ========================
+class _ServiceEditDialog extends StatefulWidget {
+  final ServiceRecord? serviceToEdit;
+  final Function(ServiceRecord) onSave;
+
+  const _ServiceEditDialog({this.serviceToEdit, required this.onSave});
+
+  @override
+  State<_ServiceEditDialog> createState() => _ServiceEditDialogState();
+}
+
+class _ServiceEditDialogState extends State<_ServiceEditDialog> {
+  late final TextEditingController dateCtrl;
+  late final List<LaborItem> laborsList;
+  late final List<PartItem> partsList;
+
+  @override
+  void initState() {
+    super.initState();
+    dateCtrl = TextEditingController(text: widget.serviceToEdit?.date ?? JalaliHelper.nowShamsi());
+    laborsList = widget.serviceToEdit != null ? widget.serviceToEdit!.labors.map((l) => LaborItem(title: l.title, cost: l.cost)).toList() : [];
+    partsList = widget.serviceToEdit != null ? widget.serviceToEdit!.parts.map((p) => PartItem(name: p.name, price: p.price)).toList() : [];
+  }
+
+  @override
+  void dispose() {
+    dateCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    int currentLaborTotal = laborsList.fold(0, (sum, i) => sum + i.cost);
+    int currentPartsTotal = partsList.fold(0, (sum, i) => sum + i.price);
+    int currentGrandTotal = currentLaborTotal + currentPartsTotal;
+
+    return AlertDialog(
+      title: Text(widget.serviceToEdit == null ? 'ثبت خدمات و فاکتور جدید' : 'ویرایش فاکتور'),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              TextField(controller: dateCtrl, decoration: const InputDecoration(labelText: 'تاریخ شمسی فاکتور (مثلاً: 1403/08/17)')),
+              const SizedBox(height: 14),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(color: const Color(0xFF0F172A), borderRadius: BorderRadius.circular(10)),
                 child: Column(
-                  mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    TextField(controller: dateCtrl, decoration: const InputDecoration(labelText: 'تاریخ شمسی فاکتور')),
-                    const SizedBox(height: 14),
-
-                    // بخش اجرت‌ها
-                    Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(color: const Color(0xFF0F172A), borderRadius: BorderRadius.circular(10)),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              const Text('🔧 خدمات و اجرت‌ها:', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.cyanAccent)),
-                              ElevatedButton.icon(
-                                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0284C7), padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4)),
-                                icon: const Icon(Icons.add, size: 16),
-                                label: const Text('افزودن کار', style: TextStyle(fontSize: 11)),
-                                onPressed: () {
-                                  _openAddLaborMiniDialog((item) {
-                                    setDialogState(() => laborsList.add(item));
-                                  });
-                                },
-                              ),
-                            ],
-                          ),
-                          if (laborsList.isEmpty)
-                            const Padding(
-                              padding: EdgeInsets.symmetric(vertical: 6.0),
-                              child: Text('هنوز خدمتی اضافه نشده است.', style: TextStyle(fontSize: 11, color: Colors.grey)),
-                            )
-                          else
-                            ...laborsList.asMap().entries.map((entry) {
-                              final idx = entry.key;
-                              final l = entry.value;
-                              return Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Text('• ${l.title}: ${formatToman(l.cost)}', style: const TextStyle(fontSize: 12)),
-                                  IconButton(
-                                    icon: const Icon(Icons.close, size: 16, color: Colors.redAccent),
-                                    onPressed: () => setDialogState(() => laborsList.removeAt(idx)),
-                                  )
-                                ],
-                              );
-                            }),
-                        ],
-                      ),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text('🔧 خدمات و اجرت‌ها:', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.cyanAccent)),
+                        ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0284C7), padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4)),
+                          icon: const Icon(Icons.add, size: 16),
+                          label: const Text('افزودن کار', style: TextStyle(fontSize: 11)),
+                          onPressed: () => _openAddLaborDialog(),
+                        ),
+                      ],
                     ),
-
-                    const SizedBox(height: 12),
-
-                    // بخش قطعات
-                    Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(color: const Color(0xFF0F172A), borderRadius: BorderRadius.circular(10)),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              const Text('🔩 لوازم و قطعات:', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.amberAccent)),
-                              ElevatedButton.icon(
-                                style: ElevatedButton.styleFrom(backgroundColor: Colors.amber[800], padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4)),
-                                icon: const Icon(Icons.add, size: 16),
-                                label: const Text('افزودن قطعه', style: TextStyle(fontSize: 11)),
-                                onPressed: () {
-                                  _openAddPartMiniDialog((part) {
-                                    setDialogState(() => partsList.add(part));
-                                  });
-                                },
-                              ),
-                            ],
-                          ),
-                          if (partsList.isEmpty)
-                            const Padding(
-                              padding: EdgeInsets.symmetric(vertical: 6.0),
-                              child: Text('قطعه‌ای اضافه نشده است.', style: TextStyle(fontSize: 11, color: Colors.grey)),
+                    if (laborsList.isEmpty)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 6.0),
+                        child: Text('هنوز خدمتی اضافه نشده است.', style: TextStyle(fontSize: 11, color: Colors.grey)),
+                      )
+                    else
+                      ...laborsList.asMap().entries.map((entry) {
+                        final idx = entry.key;
+                        final l = entry.value;
+                        return Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text('• ${l.title}: ${formatToman(l.cost)}', style: const TextStyle(fontSize: 12)),
+                            IconButton(
+                              icon: const Icon(Icons.close, size: 16, color: Colors.redAccent),
+                              onPressed: () => setState(() => laborsList.removeAt(idx)),
                             )
-                          else
-                            ...partsList.asMap().entries.map((entry) {
-                              final idx = entry.key;
-                              final p = entry.value;
-                              return Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Text('• ${p.name}: ${formatToman(p.price)}', style: const TextStyle(fontSize: 12)),
-                                  IconButton(
-                                    icon: const Icon(Icons.close, size: 16, color: Colors.redAccent),
-                                    onPressed: () => setDialogState(() => partsList.removeAt(idx)),
-                                  )
-                                ],
-                              );
-                            }),
-                        ],
-                      ),
-                    ),
-
-                    const SizedBox(height: 14),
-                    // جمع کل زنده
-                    Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(color: Colors.green.withOpacity(0.1), borderRadius: BorderRadius.circular(10)),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          const Text('جمع کل فاکتور:', style: TextStyle(fontWeight: FontWeight.bold)),
-                          Text(formatToman(currentGrandTotal), style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.greenAccent, fontSize: 15)),
-                        ],
-                      ),
-                    )
+                          ],
+                        );
+                      }),
                   ],
                 ),
               ),
-            ),
-            actions: [
-              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('انصراف')),
-              ElevatedButton(
-                onPressed: () {
-                  if (laborsList.isEmpty && partsList.isEmpty) {
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('حداقل یک خدمت یا یک قطعه اضافه کنید.')));
-                    return;
-                  }
-                  final record = ServiceRecord(
-                    id: DateTime.now().millisecondsSinceEpoch.toString(),
-                    date: dateCtrl.text.isNotEmpty ? dateCtrl.text : JalaliHelper.nowShamsi(),
-                    labors: laborsList,
-                    parts: partsList,
-                  );
-                  setState(() {
-                    widget.car.services.insert(0, record);
-                  });
-                  widget.onChanged();
-                  Navigator.pop(ctx);
-                },
-                child: const Text('ثبت نهایی فاکتور'),
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(color: const Color(0xFF0F172A), borderRadius: BorderRadius.circular(10)),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text('🔩 لوازم و قطعات:', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.amberAccent)),
+                        ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(backgroundColor: Colors.amber[800], padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4)),
+                          icon: const Icon(Icons.add, size: 16),
+                          label: const Text('افزودن قطعه', style: TextStyle(fontSize: 11)),
+                          onPressed: () => _openAddPartDialog(),
+                        ),
+                      ],
+                    ),
+                    if (partsList.isEmpty)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 6.0),
+                        child: Text('قطعه‌ای اضافه نشده است.', style: TextStyle(fontSize: 11, color: Colors.grey)),
+                      )
+                    else
+                      ...partsList.asMap().entries.map((entry) {
+                        final idx = entry.key;
+                        final p = entry.value;
+                        return Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text('• ${p.name}: ${formatToman(p.price)}', style: const TextStyle(fontSize: 12)),
+                            IconButton(
+                              icon: const Icon(Icons.close, size: 16, color: Colors.redAccent),
+                              onPressed: () => setState(() => partsList.removeAt(idx)),
+                            )
+                          ],
+                        );
+                      }),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 14),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(color: Colors.green.withOpacity(0.1), borderRadius: BorderRadius.circular(10)),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('جمع کل فاکتور:', style: TextStyle(fontWeight: FontWeight.bold)),
+                    Text(formatToman(currentGrandTotal), style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.greenAccent, fontSize: 15)),
+                  ],
+                ),
               )
             ],
-          );
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('انصراف')),
+        ElevatedButton(
+          onPressed: () {
+            if (laborsList.isEmpty && partsList.isEmpty) {
+              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('حداقل یک خدمت یا یک قطعه اضافه کنید.')));
+              return;
+            }
+            final record = ServiceRecord(
+              id: widget.serviceToEdit?.id ?? DateTime.now().millisecondsSinceEpoch.toString(),
+              date: dateCtrl.text.isNotEmpty ? dateCtrl.text.trim() : JalaliHelper.nowShamsi(),
+              labors: List.from(laborsList),
+              parts: List.from(partsList),
+            );
+            widget.onSave(record);
+            Navigator.pop(context);
+          },
+          child: const Text('ذخیره فاکتور'),
+        )
+      ],
+    );
+  }
+
+  void _openAddLaborDialog() {
+    showDialog(
+      context: context,
+      builder: (ctx) => _SingleItemDialog(
+        title: 'افزودن شرح کار و دستمزد',
+        firstFieldLabel: 'شرح کار (مثلاً: عیب‌یابی دیاگ یا تعویض دینام)',
+        secondFieldLabel: 'اجرت دستمزد (تومان)',
+        onAdd: (name, price) {
+          setState(() {
+            laborsList.add(LaborItem(title: name, cost: price));
+          });
         },
       ),
     );
   }
 
-  void _openAddLaborMiniDialog(Function(LaborItem) onAdded) {
-    final titleCtrl = TextEditingController();
-    final costCtrl = TextEditingController();
+  void _openAddPartDialog() {
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('افزودن شرح کار و دستمزد'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(controller: titleCtrl, decoration: const InputDecoration(labelText: 'شرح کار (مثلاً: عیب‌یابی دیاگ یا تعویض دینام)')),
-            TextField(controller: costCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'اجرت دستمزد (تومان)')),
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('انصراف')),
-          ElevatedButton(
-            onPressed: () {
-              if (titleCtrl.text.isNotEmpty) {
-                onAdded(LaborItem(title: titleCtrl.text.trim(), cost: int.tryParse(costCtrl.text) ?? 0));
-                Navigator.pop(ctx);
-              }
-            },
-            child: const Text('افزودن'),
-          )
-        ],
+      builder: (ctx) => _SingleItemDialog(
+        title: 'افزودن قطعه مصرفی',
+        firstFieldLabel: 'نام قطعه (مثلاً: رله دوبل یا لامپ)',
+        secondFieldLabel: 'قیمت فروش قطعه (تومان)',
+        onAdd: (name, price) {
+          setState(() {
+            partsList.add(PartItem(name: name, price: price));
+          });
+        },
       ),
     );
   }
+}
 
-  void _openAddPartMiniDialog(Function(PartItem) onAdded) {
-    final nameCtrl = TextEditingController();
-    final priceCtrl = TextEditingController();
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('افزودن قطعه مصرفی'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: 'نام قطعه (مثلاً: رله دوبل)')),
-            TextField(controller: priceCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'قیمت فروش قطعه (تومان)')),
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('انصراف')),
-          ElevatedButton(
-            onPressed: () {
-              if (nameCtrl.text.isNotEmpty) {
-                onAdded(PartItem(name: nameCtrl.text.trim(), price: int.tryParse(priceCtrl.text) ?? 0));
-                Navigator.pop(ctx);
-              }
-            },
-            child: const Text('افزودن'),
-          )
+class _SingleItemDialog extends StatefulWidget {
+  final String title;
+  final String firstFieldLabel;
+  final String secondFieldLabel;
+  final Function(String name, int price) onAdd;
+
+  const _SingleItemDialog({
+    required this.title,
+    required this.firstFieldLabel,
+    required this.secondFieldLabel,
+    required this.onAdd,
+  });
+
+  @override
+  State<_SingleItemDialog> createState() => _SingleItemDialogState();
+}
+
+class _SingleItemDialogState extends State<_SingleItemDialog> {
+  late final TextEditingController nameCtrl;
+  late final TextEditingController costCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+    nameCtrl = TextEditingController();
+    costCtrl = TextEditingController();
+  }
+
+  @override
+  void dispose() {
+    nameCtrl.dispose();
+    costCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(widget.title),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextField(controller: nameCtrl, decoration: InputDecoration(labelText: widget.firstFieldLabel)),
+          TextField(
+            controller: costCtrl,
+            keyboardType: TextInputType.number,
+            decoration: InputDecoration(labelText: widget.secondFieldLabel),
+          ),
         ],
       ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('انصراف')),
+        ElevatedButton(
+          onPressed: () {
+            if (nameCtrl.text.trim().isNotEmpty) {
+              widget.onAdd(nameCtrl.text.trim(), NumberHelper.safeParseInt(costCtrl.text));
+              Navigator.pop(context);
+            }
+          },
+          child: const Text('افزودن'),
+        )
+      ],
     );
   }
 }
@@ -1590,6 +1809,12 @@ class _DailyReportScreenState extends State<DailyReportScreen> with SingleTicker
     _tabController = TabController(length: 2, vsync: this);
     selectedDay = JalaliHelper.nowShamsi();
     selectedMonth = JalaliHelper.currentMonthShamsi();
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
   }
 
   @override
@@ -1664,16 +1889,16 @@ class _DailyReportScreenState extends State<DailyReportScreen> with SingleTicker
                     showDialog(
                       context: context,
                       builder: (ctx) => AlertDialog(
-                        title: Text(isMonthly ? 'تغییر ماه (مثلاً: ۱۴۰۳/۰۸)' : 'تغییر تاریخ (مثلاً: ۱۴۰۳/۰۸/۱۷)'),
+                        title: Text(isMonthly ? 'تغییر ماه (مثلاً: 1403/08)' : 'تغییر تاریخ (مثلاً: 1403/08/17)'),
                         content: TextField(controller: ctrl),
                         actions: [
                           ElevatedButton(
                             onPressed: () {
                               setState(() {
                                 if (isMonthly) {
-                                  selectedMonth = ctrl.text;
+                                  selectedMonth = ctrl.text.trim();
                                 } else {
-                                  selectedDay = ctrl.text;
+                                  selectedDay = ctrl.text.trim();
                                 }
                               });
                               Navigator.pop(ctx);
@@ -1726,7 +1951,7 @@ class _DailyReportScreenState extends State<DailyReportScreen> with SingleTicker
           const SizedBox(height: 16),
           Align(
             alignment: Alignment.centerRight,
-            child: Text('سوابق فاکتورهای این بازه (${servicesList.length} خودرو):', style: const TextStyle(fontWeight: FontWeight.bold)),
+            child: Text('سوابق فاکتورهای این بازه (${servicesList.length} فاکتور):', style: const TextStyle(fontWeight: FontWeight.bold)),
           ),
           const SizedBox(height: 8),
           if (servicesList.isEmpty)

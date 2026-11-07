@@ -14,7 +14,7 @@ void main() {
   runApp(const AutoElectricApp());
 }
 
-// ======================== مبدل تاریخ شمسی ========================
+// ======================== تقویم شمسی ========================
 class JalaliHelper {
   static String nowShamsi() {
     final now = DateTime.now();
@@ -51,6 +51,21 @@ String formatToman(int amount) {
 }
 
 // ======================== مدل‌های داده ========================
+// اجرت هر کار به طور جداگانه
+class LaborItem {
+  String title;
+  int cost;
+
+  LaborItem({required this.title, required this.cost});
+
+  Map<String, dynamic> toMap() => {'title': title, 'cost': cost};
+  factory LaborItem.fromMap(Map<String, dynamic> map) => LaborItem(
+        title: map['title'] ?? '',
+        cost: map['cost'] ?? 0,
+      );
+}
+
+// قطعات مصرفی
 class PartItem {
   String name;
   int price;
@@ -64,41 +79,59 @@ class PartItem {
       );
 }
 
+// فاکتور ثبت شده
 class ServiceRecord {
   String id;
-  String title;
   String date;
-  int laborCost;
-  List<PartItem> parts;
+  List<LaborItem> labors; // لیست اجرت‌ها
+  List<PartItem> parts;   // لیست قطعات
 
   ServiceRecord({
     required this.id,
-    required this.title,
     required this.date,
-    required this.laborCost,
+    required this.labors,
     required this.parts,
   });
 
+  int get laborTotal => labors.fold(0, (sum, item) => sum + item.cost);
   int get partsTotal => parts.fold(0, (sum, item) => sum + item.price);
-  int get grandTotal => laborCost + partsTotal;
+  int get grandTotal => laborTotal + partsTotal;
+
+  String get summaryTitle => labors.isNotEmpty 
+      ? labors.map((l) => l.title).join(' ، ') 
+      : 'خدمات عمومی برق خودرو';
 
   Map<String, dynamic> toMap() => {
         'id': id,
-        'title': title,
         'date': date,
-        'laborCost': laborCost,
+        'labors': labors.map((l) => l.toMap()).toList(),
         'parts': parts.map((p) => p.toMap()).toList(),
       };
 
-  factory ServiceRecord.fromMap(Map<String, dynamic> map) => ServiceRecord(
-        id: map['id'] ?? '',
-        title: map['title'] ?? '',
-        date: map['date'] ?? JalaliHelper.nowShamsi(),
-        laborCost: map['laborCost'] ?? 0,
-        parts: (map['parts'] as List? ?? []).map((p) => PartItem.fromMap(p)).toList(),
-      );
+  factory ServiceRecord.fromMap(Map<String, dynamic> map) {
+    List<LaborItem> parsedLabors = [];
+    if (map['labors'] != null) {
+      parsedLabors = (map['labors'] as List).map((l) => LaborItem.fromMap(l)).toList();
+    } else if (map['title'] != null || map['laborCost'] != null) {
+      // سازگاری با رکوردهای قدیمی
+      parsedLabors = [
+        LaborItem(
+          title: map['title'] ?? 'خدمات برق',
+          cost: map['laborCost'] ?? 0,
+        )
+      ];
+    }
+
+    return ServiceRecord(
+      id: map['id'] ?? '',
+      date: map['date'] ?? JalaliHelper.nowShamsi(),
+      labors: parsedLabors,
+      parts: (map['parts'] as List? ?? []).map((p) => PartItem.fromMap(p)).toList(),
+    );
+  }
 }
 
+// خودرو
 class Car {
   String id;
   String model;
@@ -141,6 +174,7 @@ class Car {
       );
 }
 
+// مشتری
 class Customer {
   String id;
   String name;
@@ -164,14 +198,14 @@ class Customer {
       );
 }
 
-// ======================== بدنه اصلی برنامه ========================
+// ======================== ویجت اصلی برنامه ========================
 class AutoElectricApp extends StatelessWidget {
   const AutoElectricApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'برق خودرو مهندس', // تغییر نام پنجره برنامه
+      title: 'برق خودرو مهندس',
       debugShowCheckedModeBanner: false,
       locale: const Locale('fa', 'IR'),
       supportedLocales: const [Locale('fa', 'IR')],
@@ -183,13 +217,7 @@ class AutoElectricApp extends StatelessWidget {
       theme: ThemeData(
         brightness: Brightness.dark,
         scaffoldBackgroundColor: const Color(0xFF0F172A),
-        primaryColor: const Color(0xFF0284C7),// در فایل lib/main.dart
-return Scaffold(
-  appBar: AppBar(
-    title: const Text('⚡ برق خودرو مهندس', style: TextStyle(fontWeight: FontWeight.bold)), // <-- اینجاست
-    centerTitle: true,
-    backgroundColor: const Color(0xFF1E293B),
-...
+        primaryColor: const Color(0xFF0284C7),
         cardColor: const Color(0xFF1E293B),
         colorScheme: const ColorScheme.dark(
           primary: Color(0xFF38BDF8),
@@ -221,7 +249,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 
   Future<void> _loadData() async {
     final prefs = await SharedPreferences.getInstance();
-    final String? raw = prefs.getString('customers_data_v4');
+    final String? raw = prefs.getString('customers_data_v5');
     if (raw != null) {
       final List decoded = jsonDecode(raw);
       setState(() {
@@ -233,7 +261,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   Future<void> _saveData() async {
     final prefs = await SharedPreferences.getInstance();
     final String encoded = jsonEncode(customers.map((c) => c.toMap()).toList());
-    await prefs.setString('customers_data_v4', encoded);
+    await prefs.setString('customers_data_v5', encoded);
   }
 
   @override
@@ -260,7 +288,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   }
 }
 
-// ======================== صفحه اصلی و مدیریت پرونده‌ها ========================
+// ======================== صفحه اصلی ========================
 class HomeScreen extends StatefulWidget {
   final List<Customer> customers;
   final VoidCallback onDataChanged;
@@ -283,13 +311,13 @@ class _HomeScreenState extends State<HomeScreen> {
       final matchCar = c.cars.any((car) =>
           car.fullPlate.contains(q) ||
           car.model.contains(q) ||
-          car.services.any((s) => s.title.contains(q) || s.date.contains(q)));
+          car.services.any((s) => s.summaryTitle.contains(q) || s.date.contains(q)));
       return matchCust || matchCar;
     }).toList();
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('⚡ کلینیک برق و دیاگ خودرو', style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text('⚡ برق خودرو مهندس', style: TextStyle(fontWeight: FontWeight.bold)),
         centerTitle: true,
         backgroundColor: const Color(0xFF1E293B),
         actions: [
@@ -307,7 +335,7 @@ class _HomeScreenState extends State<HomeScreen> {
             child: TextField(
               onChanged: (val) => setState(() => searchQuery = val),
               decoration: InputDecoration(
-                hintText: 'جستجو با نام مشتری، پلاک، شماره یا تاریخ (۱۴۰۳)...',
+                hintText: 'جستجو با نام، پلاک، کار انجام شده یا تاریخ...',
                 prefixIcon: const Icon(Icons.search, color: Colors.cyanAccent),
                 filled: true,
                 fillColor: const Color(0xFF1E293B),
@@ -348,12 +376,10 @@ class _HomeScreenState extends State<HomeScreen> {
             Expanded(child: Text(customer.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16))),
             IconButton(
               icon: const Icon(Icons.edit, size: 20, color: Colors.cyanAccent),
-              tooltip: 'ویرایش مشخصات مشتری',
               onPressed: () => _openCustomerDialog(customer: customer),
             ),
             IconButton(
               icon: const Icon(Icons.delete_outline, size: 20, color: Colors.redAccent),
-              tooltip: 'حذف مشتری',
               onPressed: () => _confirmDeleteCustomer(customer),
             ),
           ],
@@ -363,7 +389,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ...customer.cars.map((car) => _buildCarRow(customer, car)).toList(),
           TextButton.icon(
             icon: const Icon(Icons.add_circle_outline, color: Colors.cyanAccent),
-            label: const Text('ثبت خودروی جدید برای این مشتری'),
+            label: const Text('ثبت خودروی دیگر برای این مشتری'),
             onPressed: () => _openCarDialog(customer: customer),
           ),
           const SizedBox(height: 6),
@@ -471,7 +497,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // دیالوگ افزودن و ویرایش مشتری
   void _openCustomerDialog({Customer? customer}) {
     final nameCtrl = TextEditingController(text: customer?.name ?? '');
     final phoneCtrl = TextEditingController(text: customer?.phone ?? '');
@@ -479,7 +504,7 @@ class _HomeScreenState extends State<HomeScreen> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text(customer == null ? 'ثبت مشتری جدید' : 'ویرایش اطلاعات مشتری'),
+        title: Text(customer == null ? 'ثبت مشتری جدید' : 'ویرایش مشخصات مشتری'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -524,7 +549,7 @@ class _HomeScreenState extends State<HomeScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('⚠️ حذف پرونده مشتری', style: TextStyle(color: Colors.redAccent)),
-        content: Text('آیا از حذف پرونده "${customer.name}" و تمام خودروها و فاکتورهای مربوط به آن مطمئن هستید؟ این عملیات غیرقابل بازگشت است.'),
+        content: Text('آیا از حذف پرونده "${customer.name}" و کلیه خودروها و فاکتورها اطمینان دارید؟'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('انصراف')),
           ElevatedButton(
@@ -535,16 +560,14 @@ class _HomeScreenState extends State<HomeScreen> {
               });
               widget.onDataChanged();
               Navigator.pop(ctx);
-              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('پرونده مشتری حذف شد.')));
             },
-            child: const Text('بله، حذف کن', style: TextStyle(color: Colors.white)),
+            child: const Text('حذف'),
           )
         ],
       ),
     );
   }
 
-  // دیالوگ افزودن و ویرایش خودرو
   void _openCarDialog({required Customer customer, Car? carToEdit}) {
     final modelCtrl = TextEditingController(text: carToEdit?.model ?? '');
     final twoCtrl = TextEditingController(text: carToEdit?.plateTwoDigits ?? '');
@@ -560,13 +583,11 @@ class _HomeScreenState extends State<HomeScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              TextField(controller: modelCtrl, decoration: const InputDecoration(labelText: 'مدل خودرو (مثلاً: پژو ۲۰۶)')),
+              TextField(controller: modelCtrl, decoration: const InputDecoration(labelText: 'مدل خودرو (مثلاً: دنا پلاس)')),
               const SizedBox(height: 12),
-              const Text('مشخصات پلاک انتظامی:', style: TextStyle(fontSize: 12, color: Colors.grey)),
-              const SizedBox(height: 6),
               Row(
                 children: [
-                  Expanded(child: TextField(controller: provCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(hintText: 'کد ایران'))),
+                  Expanded(child: TextField(controller: provCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(hintText: 'ایران'))),
                   const SizedBox(width: 4),
                   Expanded(child: TextField(controller: threeCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(hintText: '۳ رقم'))),
                   const SizedBox(width: 4),
@@ -620,7 +641,7 @@ class _HomeScreenState extends State<HomeScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('حذف خودرو', style: TextStyle(color: Colors.redAccent)),
-        content: Text('آیا از حذف خودروی "${car.model} (${car.fullPlate})" با تمام فاکتورهای آن اطمینان دارید؟'),
+        content: Text('آیا از حذف خودروی "${car.model}" مطمئن هستید؟'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('انصراف')),
           ElevatedButton(
@@ -711,7 +732,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-// ======================== صفحه فاکتورها، چاپ PDF و ارسال پیامک ========================
+// ======================== صفحه فاکتور با لیست خدمات و قطعات ========================
 class CarServicesScreen extends StatefulWidget {
   final Customer customer;
   final Car car;
@@ -732,14 +753,14 @@ class _CarServicesScreenState extends State<CarServicesScreen> {
         backgroundColor: const Color(0xFF1E293B),
       ),
       body: widget.car.services.isEmpty
-          ? const Center(child: Text('هنوز خدماتی برای این خودرو ثبت نشده است.', style: TextStyle(color: Colors.grey)))
+          ? const Center(child: Text('هنوز فاکتوری برای این خودرو ثبت نشده است.', style: TextStyle(color: Colors.grey)))
           : ListView.builder(
               padding: const EdgeInsets.all(12),
               itemCount: widget.car.services.length,
               itemBuilder: (context, i) {
                 final s = widget.car.services[i];
                 return Card(
-                  margin: const EdgeInsets.only(bottom: 12),
+                  margin: const EdgeInsets.only(bottom: 14),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                   child: Padding(
                     padding: const EdgeInsets.all(14.0),
@@ -749,501 +770,42 @@ class _CarServicesScreenState extends State<CarServicesScreen> {
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Text(s.title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.cyanAccent)),
-                            Row(
-                              children: [
-                                Text('📅 ${s.date}', style: const TextStyle(color: Colors.amberAccent, fontSize: 12)),
-                                IconButton(
-                                  icon: const Icon(Icons.delete_outline, size: 20, color: Colors.redAccent),
-                                  onPressed: () => _confirmDeleteService(s),
-                                )
-                              ],
+                            Text('📅 تاریخ: ${s.date}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.amberAccent)),
+                            IconButton(
+                              icon: const Icon(Icons.delete_outline, size: 20, color: Colors.redAccent),
+                              onPressed: () => _confirmDeleteService(s),
                             ),
                           ],
                         ),
                         const Divider(height: 16),
-                        if (s.parts.isNotEmpty) ...[
-                          const Text('قطعات و لوازم مصرفی:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                          const SizedBox(height: 4),
-                          ...s.parts.map((p) => Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Text('• ${p.name}', style: const TextStyle(fontSize: 13)),
-                                  Text(formatToman(p.price), style: const TextStyle(fontSize: 13, color: Colors.white70)),
-                                ],
-                              )),
-                          const SizedBox(height: 8),
-                        ],
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            const Text('اجرت دستمزد و تعمیرات:', style: TextStyle(fontSize: 13)),
-                            Text(formatToman(s.laborCost), style: const TextStyle(fontSize: 13)),
-                          ],
-                        ),
-                        const Divider(height: 16),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            const Text('جمع کل فاکتور:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-                            Text(formatToman(s.grandTotal), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Colors.greenAccent)),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.end,
-                          children: [
-                            // دکمه ارسال پیامک خلاصه صورتحساب
-                            ElevatedButton.icon(
-                              style: ElevatedButton.styleFrom(backgroundColor: Colors.teal[700]),
-                              icon: const Icon(Icons.sms, size: 16, color: Colors.white),
-                              label: const Text('پیامک ترخیص', style: TextStyle(color: Colors.white, fontSize: 12)),
-                              onPressed: () => _sendSmsNotification(s),
-                            ),
-                            const SizedBox(width: 8),
-                            // دکمه پرینت و خروجی PDF
-                            ElevatedButton.icon(
-                              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0284C7)),
-                              icon: const Icon(Icons.print, size: 16, color: Colors.white),
-                              label: const Text('چاپ فاکتور PDF', style: TextStyle(color: Colors.white, fontSize: 12)),
-                              onPressed: () => _printPdfInvoice(s),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              },
-            ),
-      floatingActionButton: FloatingActionButton.extended(
-        backgroundColor: const Color(0xFF0284C7),
-        icon: const Icon(Icons.note_add, color: Colors.white),
-        label: const Text('ثبت فاکتور جدید', style: TextStyle(color: Colors.white)),
-        onPressed: _openAddServiceDialog,
-      ),
-    );
-  }
-
-  // ارسال پیامک خودکار با متن آماده به راننده
-  Future<void> _sendSmsNotification(ServiceRecord s) async {
-    if (widget.customer.phone.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('شماره همراه مشتری ثبت نشده است!')));
-      return;
-    }
-    final msg = 'مشتری گرامی ${widget.customer.name}\n'
-        'خودروی ${widget.car.model} شما در کلینیک برق خودرو آماده تحویل است.\n'
-        'شرح کار: ${s.title}\n'
-        'مبلغ قابل پرداخت: ${formatToman(s.grandTotal)}';
-
-    final uri = Uri.parse('sms:${widget.customer.phone}?body=${Uri.encodeComponent(msg)}');
-    try {
-      await launchUrl(uri);
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('برنامه پیامک گوشی باز نشد.')));
-    }
-  }
-
-  // حذف فاکتور
-  void _confirmDeleteService(ServiceRecord s) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('حذف فاکتور'),
-        content: const Text('آیا از حذف این فاکتور مطمئن هستید؟'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('انصراف')),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
-            onPressed: () {
-              setState(() {
-                widget.car.services.removeWhere((item) => item.id == s.id);
-              });
-              widget.onChanged();
-              Navigator.pop(ctx);
-            },
-            child: const Text('حذف'),
-          )
-        ],
-      ),
-    );
-  }
-
-  // ایجاد و چاپ PDF با فونت استاندارد
-  Future<void> _printPdfInvoice(ServiceRecord service) async {
-    try {
-      final pdf = pw.Document();
-      final font = await PdfGoogleFonts.vazirmatnRegular();
-
-      pdf.addPage(
-        pw.Page(
-          pageFormat: PdfPageFormat.a4,
-          theme: pw.ThemeData.withFont(base: font),
-          textDirection: pw.TextDirection.rtl,
-          build: (pw.Context context) {
-            return pw.Container(
-              padding: const pw.EdgeInsets.all(24),
-              child: pw.Column(
-                crossAxisAlignment: pw.CrossAxisAlignment.start,
-                children: [
-                  pw.Center(
-                    child: pw.Text('صورت‌حساب خدمات برق و الکترونیک خودرو', style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold)),
-                  ),
-                  pw.SizedBox(height: 16),
-                  pw.Row(
-                    mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                    children: [
-                      pw.Text('نام مشتری: ${widget.customer.name}'),
-                      pw.Text('شماره تماس: ${widget.customer.phone}'),
-                    ],
-                  ),
-                  pw.SizedBox(height: 8),
-                  pw.Row(
-                    mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                    children: [
-                      pw.Text('مدل خودرو: ${widget.car.model}'),
-                      pw.Text('شماره پلاک: ${widget.car.fullPlate}'),
-                      pw.Text('تاریخ: ${service.date}'),
-                    ],
-                  ),
-                  pw.Divider(thickness: 1.2, height: 25),
-                  pw.Text('شرح خدمات انجام شده: ${service.title}', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
-                  pw.SizedBox(height: 10),
-                  if (service.parts.isNotEmpty) ...[
-                    pw.Text('قطعات و لوازم یدکی مصرفی:', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
-                    pw.SizedBox(height: 6),
-                    ...service.parts.map((p) => pw.Row(
-                          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                          children: [
-                            pw.Text('• ${p.name}'),
-                            pw.Text(formatToman(p.price)),
-                          ],
+                        
+                        // ۱. لیست اجرت‌ها و خدمات
+                        const Text('🔧 خدمات و اجرت‌های انجام شده:', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.cyanAccent, fontSize: 13)),
+                        const SizedBox(height: 6),
+                        ...s.labors.map((l) => Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 2.0),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text('• ${l.title}', style: const TextStyle(fontSize: 13)),
+                              Text(formatToman(l.cost), style: const TextStyle(fontSize: 13, color: Colors.white70)),
+                            ],
+                          ),
                         )),
-                    pw.Divider(height: 16),
-                  ],
-                  pw.Row(
-                    mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                    children: [
-                      pw.Text('اجرت دستمزد و تعمیرات:'),
-                      pw.Text(formatToman(service.laborCost)),
-                    ],
-                  ),
-                  pw.SizedBox(height: 12),
-                  pw.Container(
-                    padding: const pw.EdgeInsets.all(10),
-                    color: PdfColors.grey200,
-                    child: pw.Row(
-                      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                      children: [
-                        pw.Text('مبلغ نهایی قابل پرداخت:', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 14)),
-                        pw.Text(formatToman(service.grandTotal), style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 14)),
-                      ],
-                    ),
-                  ),
-                  pw.Spacer(),
-                  pw.Row(
-                    mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                    children: [
-                      pw.Text('امضاء مشتری'),
-                      pw.Text('مهر و امضاء کلینیک برق خودرو'),
-                    ],
-                  ),
-                ],
-              ),
-            );
-          },
-        ),
-      );
+                        const SizedBox(height: 4),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text('جمع اجرت‌ها:', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                            Text(formatToman(s.laborTotal), style: const TextStyle(fontSize: 12, color: Colors.cyanAccent, fontWeight: FontWeight.bold)),
+                          ],
+                        ),
+                        const Divider(height: 16),
 
-      await Printing.layoutPdf(onLayout: (PdfPageFormat format) async => pdf.save());
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('خطا در صدور PDF: $e'), backgroundColor: Colors.redAccent),
-      );
-    }
-  }
-
-  void _openAddServiceDialog() {
-    final titleCtrl = TextEditingController();
-    final laborCtrl = TextEditingController();
-    final dateCtrl = TextEditingController(text: JalaliHelper.nowShamsi());
-    final List<PartItem> partsList = [];
-
-    showDialog(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: const Text('ثبت خدمات و فاکتور برق'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                TextField(controller: dateCtrl, decoration: const InputDecoration(labelText: 'تاریخ شمسی (مثلاً: ۱۴۰۳/۰۸/۱۷)')),
-                TextField(controller: titleCtrl, decoration: const InputDecoration(labelText: 'شرح کار (مثلاً: سیم‌کشی فن و تعویض فیوز)')),
-                TextField(controller: laborCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'اجرت دستمزد (تومان)')),
-                const SizedBox(height: 12),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text('قطعات مصرفی:', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.amberAccent)),
-                    IconButton(
-                      icon: const Icon(Icons.add_circle, color: Colors.cyanAccent),
-                      onPressed: () {
-                        _openAddPartMiniDialog((part) {
-                          setDialogState(() => partsList.add(part));
-                        });
-                      },
-                    )
-                  ],
-                ),
-                ...partsList.map((p) => Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(p.name),
-                        Text(formatToman(p.price)),
-                      ],
-                    )),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('انصراف')),
-            ElevatedButton(
-              onPressed: () {
-                if (titleCtrl.text.isNotEmpty) {
-                  final record = ServiceRecord(
-                    id: DateTime.now().millisecondsSinceEpoch.toString(),
-                    title: titleCtrl.text,
-                    date: dateCtrl.text.isNotEmpty ? dateCtrl.text : JalaliHelper.nowShamsi(),
-                    laborCost: int.tryParse(laborCtrl.text) ?? 0,
-                    parts: partsList,
-                  );
-                  setState(() {
-                    widget.car.services.insert(0, record);
-                  });
-                  widget.onChanged();
-                  Navigator.pop(ctx);
-                }
-              },
-              child: const Text('ثبت نهایی فاکتور'),
-            )
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _openAddPartMiniDialog(Function(PartItem) onAdded) {
-    final pNameCtrl = TextEditingController();
-    final pPriceCtrl = TextEditingController();
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('افزودن قطعه خریده شده'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(controller: pNameCtrl, decoration: const InputDecoration(labelText: 'نام قطعه (مثلاً: رله دوبل)')),
-            TextField(controller: pPriceCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'قیمت فروش قطعه (تومان)')),
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('انصراف')),
-          ElevatedButton(
-            onPressed: () {
-              if (pNameCtrl.text.isNotEmpty) {
-                onAdded(PartItem(name: pNameCtrl.text, price: int.tryParse(pPriceCtrl.text) ?? 0));
-                Navigator.pop(ctx);
-              }
-            },
-            child: const Text('افزودن'),
-          )
-        ],
-      ),
-    );
-  }
-}
-
-// ======================== داشبورد دخل روزانه و ماهانه ========================
-class DailyReportScreen extends StatefulWidget {
-  final List<Customer> customers;
-
-  const DailyReportScreen({super.key, required this.customers});
-
-  @override
-  State<DailyReportScreen> createState() => _DailyReportScreenState();
-}
-
-class _DailyReportScreenState extends State<DailyReportScreen> with SingleTickerProviderStateMixin {
-  late TabController _tabController;
-  late String selectedDay;
-  late String selectedMonth;
-
-  @override
-  void initState() {
-    super.initState();
-    _tabController = TabController(length: 2, vsync: this);
-    selectedDay = JalaliHelper.nowShamsi();
-    selectedMonth = JalaliHelper.currentMonthShamsi();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('📊 گزارش دخل و سود کارگاه'),
-        backgroundColor: const Color(0xFF1E293B),
-        bottom: TabBar(
-          controller: _tabController,
-          indicatorColor: Colors.cyanAccent,
-          labelColor: Colors.cyanAccent,
-          tabs: const [
-            Tab(text: 'گزارش روزانه'),
-            Tab(text: 'گزارش ماهانه'),
-          ],
-        ),
-      ),
-      body: TabBarView(
-        controller: _tabController,
-        children: [
-          _buildReportView(isMonthly: false),
-          _buildReportView(isMonthly: true),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildReportView({required bool isMonthly}) {
-    List<Map<String, dynamic>> servicesList = [];
-    int totalLabor = 0;
-    int totalParts = 0;
-
-    final targetFilter = isMonthly ? selectedMonth : selectedDay;
-
-    for (var cust in widget.customers) {
-      for (var car in cust.cars) {
-        for (var s in car.services) {
-          final isMatch = isMonthly ? s.date.startsWith(targetFilter) : (s.date == targetFilter);
-          if (isMatch) {
-            totalLabor += s.laborCost;
-            totalParts += s.partsTotal;
-            servicesList.add({
-              'customer': cust.name,
-              'car': car.model,
-              'plate': car.fullPlate,
-              'service': s,
-            });
-          }
-        }
-      }
-    }
-
-    final totalRevenue = totalLabor + totalParts;
-
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16.0),
-      child: Column(
-        children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            decoration: BoxDecoration(color: const Color(0xFF1E293B), borderRadius: BorderRadius.circular(16)),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(isMonthly ? 'ماه گزارش (شمسی):' : 'روز گزارش (شمسی):', style: const TextStyle(fontWeight: FontWeight.bold)),
-                Text(targetFilter, style: const TextStyle(color: Colors.amberAccent, fontSize: 16, fontWeight: FontWeight.bold)),
-                IconButton(
-                  icon: const Icon(Icons.edit_calendar, color: Colors.cyanAccent),
-                  onPressed: () {
-                    final ctrl = TextEditingController(text: targetFilter);
-                    showDialog(
-                      context: context,
-                      builder: (ctx) => AlertDialog(
-                        title: Text(isMonthly ? 'تغییر ماه (مثلاً: ۱۴۰۳/۰۸)' : 'تغییر تاریخ (مثلاً: ۱۴۰۳/۰۸/۱۷)'),
-                        content: TextField(controller: ctrl),
-                        actions: [
-                          ElevatedButton(
-                            onPressed: () {
-                              setState(() {
-                                if (isMonthly) {
-                                  selectedMonth = ctrl.text;
-                                } else {
-                                  selectedDay = ctrl.text;
-                                }
-                              });
-                              Navigator.pop(ctx);
-                            },
-                            child: const Text('اعمال'),
-                          )
-                        ],
-                      ),
-                    );
-                  },
-                )
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-          Card(
-            color: const Color(0xFF0284C7).withOpacity(0.2),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: const BorderSide(color: Colors.cyanAccent)),
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                children: [
-                  Text(isMonthly ? '💰 دستمزد و سود خالص این ماه' : '💰 دستمزد و سود خالص این روز', style: const TextStyle(fontSize: 16, color: Colors.white70)),
-                  const SizedBox(height: 8),
-                  Text(formatToman(totalLabor), style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.greenAccent)),
-                  const Divider(height: 24),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceAround,
-                    children: [
-                      Column(
-                        children: [
-                          const Text('جمع کل لوازم و قطعات', style: TextStyle(color: Colors.grey, fontSize: 12)),
-                          const SizedBox(height: 4),
-                          Text(formatToman(totalParts), style: const TextStyle(fontWeight: FontWeight.bold)),
-                        ],
-                      ),
-                      Column(
-                        children: [
-                          const Text('کل دخل کارگاه (با قطعات)', style: TextStyle(color: Colors.grey, fontSize: 12)),
-                          const SizedBox(height: 4),
-                          Text(formatToman(totalRevenue), style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.amberAccent)),
-                        ],
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-          Align(
-            alignment: Alignment.centerRight,
-            child: Text('سوابق خدمات در این بازه (${servicesList.length} مورد):', style: const TextStyle(fontWeight: FontWeight.bold)),
-          ),
-          const SizedBox(height: 8),
-          if (servicesList.isEmpty)
-            const Padding(
-              padding: EdgeInsets.all(24.0),
-              child: Text('هیچ فاکتوری در این تاریخ ثبت نشده است.', style: TextStyle(color: Colors.grey)),
-            )
-          else
-            ...servicesList.map((item) {
-              final s = item['service'] as ServiceRecord;
-              return Card(
-                margin: const EdgeInsets.symmetric(vertical: 4),
-                child: ListTile(
-                  title: Text('${item['car']} - ${item['customer']} (${s.date})'),
-                  subtitle: Text('${s.title}\nاجرت: ${formatToman(s.laborCost)}'),
-                  trailing: Text(formatToman(s.grandTotal), style: const TextStyle(color: Colors.greenAccent, fontWeight: FontWeight.bold)),
-                ),
-              );
-            }),
-        ],
-      ),
-    );
-  }
-}
+                        // ۲. لیست لوازم و قطعات
+                        if (s.parts.isNotEmpty) ...[
+                          const Text('🔩 قطعات و لوازم مصرفی:', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.amberAccent, fontSize: 13)),
+                          const SizedBox(height: 6),
+                          ...s.parts.map((p) => Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 2.0),
+                            child: Row(

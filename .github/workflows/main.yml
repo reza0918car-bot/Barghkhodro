@@ -1,4 +1,4 @@
-run: flutter pub run flutter_launcher_icons
+- run: flutter pub run flutter_launcher_icons
 name: Build Android APK
 
 on:

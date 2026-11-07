@@ -1210,111 +1210,130 @@ class _CarServicesScreenState extends State<CarServicesScreen> {
   Future<void> _printPdfInvoice(ServiceRecord service) async {
     try {
       final pdf = pw.Document();
+      
+      // دانلود یا لود فونت فارسی (هر دو حالت عادی و ضخیم برای جلوگیری از به هم ریختگی)
       final font = await PdfGoogleFonts.vazirmatnRegular();
+      final fontBold = await PdfGoogleFonts.vazirmatnBold();
 
       pdf.addPage(
         pw.Page(
           pageFormat: PdfPageFormat.a4,
-          theme: pw.ThemeData.withFont(base: font),
+          theme: pw.ThemeData.withFont(
+            base: font,
+            bold: fontBold, // جلوگیری از سوییچ به Helvetica
+          ),
           textDirection: pw.TextDirection.rtl,
           build: (pw.Context context) {
-            return pw.Container(
-              padding: const pw.EdgeInsets.all(24),
-              child: pw.Column(
-                crossAxisAlignment: pw.CrossAxisAlignment.start,
-                children: [
-                  pw.Center(
-                    child: pw.Text('صورت‌حساب خدمات برق خودرو مهندس', style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold)),
-                  ),
-                  pw.SizedBox(height: 16),
-                  pw.Row(
-                    mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                    children: [
-                      pw.Text('نام مشتری: ${widget.customer.name}'),
-                      pw.Text('شماره تماس: ${widget.customer.phone}'),
-                    ],
-                  ),
-                  pw.SizedBox(height: 8),
-                  pw.Row(
-                    mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                    children: [
-                      pw.Text('مدل خودرو: ${widget.car.model}'),
-                      pw.Text('پلاک: ${widget.car.fullPlate}'),
-                      pw.Text('تاریخ: ${service.date}'),
-                    ],
-                  ),
-                  pw.Divider(thickness: 1.2, height: 25),
-                  
-                  // اجرت‌ها
-                  pw.Text('شرح خدمات و اجرت‌ها:', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
-                  pw.SizedBox(height: 6),
-                  ...service.labors.map((l) => pw.Row(
-                        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                        children: [
-                          pw.Text('• ${l.title}'),
-                          pw.Text(formatToman(l.cost)),
-                        ],
-                      )),
-                  pw.SizedBox(height: 4),
-                  pw.Row(
-                    mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                    children: [
-                      pw.Text('جمع اجرت‌ها:', style: pw.TextStyle(fontSize: 10, color: PdfColors.grey700)),
-                      pw.Text(formatToman(service.laborTotal), style: pw.TextStyle(fontSize: 10, color: PdfColors.grey700)),
-                    ],
-                  ),
-                  pw.Divider(height: 16),
+            return pw.Directionality(
+              textDirection: pw.TextDirection.rtl,
+              child: pw.Container(
+                padding: const pw.EdgeInsets.all(24),
+                child: pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  children: [
+                    pw.Center(
+                      child: pw.Text('صورت‌حساب کلینیک برق خودرو مهندس', 
+                          style: pw.TextStyle(font: fontBold, fontSize: 18, fontWeight: pw.FontWeight.bold)),
+                    ),
+                    pw.SizedBox(height: 16),
+                    pw.Row(
+                      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                      children: [
+                        pw.Text('نام مشتری: ${widget.customer.name}', style: pw.TextStyle(font: font)),
+                        pw.Text('شماره تماس: ${widget.customer.phone}', style: pw.TextStyle(font: font)),
+                      ],
+                    ),
+                    pw.SizedBox(height: 8),
+                    pw.Row(
+                      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                      children: [
+                        pw.Text('مدل خودرو: ${widget.car.model}', style: pw.TextStyle(font: font)),
+                        pw.Text('پلاک: ${widget.car.fullPlate}', style: pw.TextStyle(font: font)),
+                        pw.Text('تاریخ فاکتور: ${service.date}', style: pw.TextStyle(font: font)),
+                      ],
+                    ),
+                    pw.Divider(thickness: 1.2, height: 25),
 
-                  // قطعات
-                  if (service.parts.isNotEmpty) ...[
-                    pw.Text('قطعات و لوازم مصرفی:', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+                    // لیست اجرت‌ها
+                    pw.Text('🔧 خدمات و اجرت‌های انجام شده:', style: pw.TextStyle(font: fontBold, fontWeight: pw.FontWeight.bold, fontSize: 13)),
                     pw.SizedBox(height: 6),
-                    ...service.parts.map((p) => pw.Row(
-                          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                          children: [
-                            pw.Text('• ${p.name}'),
-                            pw.Text(formatToman(p.price)),
-                          ],
+                    ...service.labors.map((l) => pw.Padding(
+                          padding: const pw.EdgeInsets.symmetric(vertical: 2),
+                          child: pw.Row(
+                            mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                            children: [
+                              pw.Text('• ${l.title}', style: pw.TextStyle(font: font)),
+                              pw.Text(formatToman(l.cost), style: pw.TextStyle(font: font)),
+                            ],
+                          ),
                         )),
                     pw.SizedBox(height: 4),
                     pw.Row(
                       mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                       children: [
-                        pw.Text('جمع قطعات:', style: pw.TextStyle(fontSize: 10, color: PdfColors.grey700)),
-                        pw.Text(formatToman(service.partsTotal), style: pw.TextStyle(fontSize: 10, color: PdfColors.grey700)),
+                        pw.Text('جمع اجرت‌ها:', style: pw.TextStyle(font: font, fontSize: 10, color: PdfColors.grey700)),
+                        pw.Text(formatToman(service.laborTotal), style: pw.TextStyle(font: fontBold, fontSize: 10)),
                       ],
                     ),
                     pw.Divider(height: 16),
-                  ],
 
-                  pw.SizedBox(height: 8),
-                  pw.Container(
-                    padding: const pw.EdgeInsets.all(10),
-                    color: PdfColors.grey200,
-                    child: pw.Row(
+                    // لیست قطعات
+                    if (service.parts.isNotEmpty) ...[
+                      pw.Text('🔩 قطعات و لوازم مصرفی:', style: pw.TextStyle(font: fontBold, fontWeight: pw.FontWeight.bold, fontSize: 13)),
+                      pw.SizedBox(height: 6),
+                      ...service.parts.map((p) => pw.Padding(
+                            padding: const pw.EdgeInsets.symmetric(vertical: 2),
+                            child: pw.Row(
+                              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                              children: [
+                                pw.Text('• ${p.name}', style: pw.TextStyle(font: font)),
+                                pw.Text(formatToman(p.price), style: pw.TextStyle(font: font)),
+                              ],
+                            ),
+                          )),
+                      pw.SizedBox(height: 4),
+                      pw.Row(
+                        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                        children: [
+                          pw.Text('جمع قطعات:', style: pw.TextStyle(font: font, fontSize: 10, color: PdfColors.grey700)),
+                          pw.Text(formatToman(service.partsTotal), style: pw.TextStyle(font: fontBold, fontSize: 10)),
+                        ],
+                      ),
+                      pw.Divider(height: 16),
+                    ],
+
+                    pw.SizedBox(height: 10),
+                    pw.Container(
+                      padding: const pw.EdgeInsets.all(10),
+                      color: PdfColors.grey200,
+                      child: pw.Row(
+                        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                        children: [
+                          pw.Text('مبلغ نهایی قابل پرداخت:', style: pw.TextStyle(font: fontBold, fontWeight: pw.FontWeight.bold, fontSize: 13)),
+                          pw.Text(formatToman(service.grandTotal), style: pw.TextStyle(font: fontBold, fontWeight: pw.FontWeight.bold, fontSize: 14)),
+                        ],
+                      ),
+                    ),
+                    pw.Spacer(),
+                    pw.Row(
                       mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                       children: [
-                        pw.Text('مبلغ نهایی قابل پرداخت:', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 14)),
-                        pw.Text(formatToman(service.grandTotal), style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 14)),
+                        pw.Text('امضاء و رضایت مشتری', style: pw.TextStyle(font: font)),
+                        pw.Text('مهر و امضاء برق خودرو مهندس', style: pw.TextStyle(font: font)),
                       ],
                     ),
-                  ),
-                  pw.Spacer(),
-                  pw.Row(
-                    mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                    children: [
-                      pw.Text('امضاء مشتری'),
-                      pw.Text('مهر و امضاء برق خودرو مهندس'),
-                    ],
-                  ),
-                ],
+                  ],
+                ),
               ),
             );
           },
         ),
       );
 
-      await Printing.layoutPdf(onLayout: (PdfPageFormat format) async => pdf.save());
+      await Printing.layoutPdf(
+        onLayout: (PdfPageFormat format) async => pdf.save(),
+        name: 'فاکتور_${widget.customer.name}_${service.date}',
+      );
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('خطا در صدور PDF: $e'), backgroundColor: Colors.redAccent),

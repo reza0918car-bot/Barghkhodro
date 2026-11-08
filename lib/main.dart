@@ -10,18 +10,7 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:url_launcher/url_launcher.dart';
-- name: Fix or Generate Android Files
-        run: |
-          if [ ! -f "android/app/build.gradle" ] && [ ! -f "android/app/build.gradle.kts" ]; then
-            echo "Android files missing. Regenerating..."
-            rm -rf android
-            flutter create --platforms=android .
-          fi
 
-          # 👈👈 دقیقاً اینجا، بعد از fi اضافه کنید:
-          sed -i 's/android:label="[^"]*"/android:label="برق خودرو مهندس"/g' android/app/src/main/AndroidManifest.xml
-
-          chmod +x android/gradlew || true
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
   runApp(const AutoElectricApp());

@@ -25,11 +25,15 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Generate Android Skeleton if needed
+      # مرحله هوشمند: بررسی کامل بودن پوشه اندروید و بازسازی در صورت نقص
+      - name: Fix or Generate Android Files
         run: |
-          if [ ! -d "android" ]; then
-            flutter create . --org com.barghkhodro --project-name auto_electric_pro
+          if [ ! -f "android/app/build.gradle" ] && [ ! -f "android/app/build.gradle.kts" ]; then
+            echo "Android files are missing or incomplete. Regenerating..."
+            rm -rf android
+            flutter create --platforms=android .
           fi
+          chmod +x android/gradlew || true
 
       - name: Install Dependencies
         run: flutter pub get

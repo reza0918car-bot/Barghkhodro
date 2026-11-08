@@ -1,7 +1,9 @@
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:intl/intl.dart' as intl;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -324,12 +326,8 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     if (raw != null) {
       try {
         final List decoded = jsonDecode(raw);
-        final loadedCustomers = decoded
-            .map((e) => Customer.fromMap(Map<String, dynamic>.from(e as Map)))
-            .toList();
-        if (!mounted) return;
         setState(() {
-          customers = loadedCustomers;
+          customers = decoded.map((e) => Customer.fromMap(e)).toList();
           _isLoading = false;
         });
         return;
@@ -337,15 +335,14 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
         debugPrint('Error loading: $e');
       }
     }
-    if (mounted) setState(() => _isLoading = false);
+    setState(() => _isLoading = false);
   }
 
   Future<void> _saveData() async {
     final prefs = await SharedPreferences.getInstance();
     final String encoded = jsonEncode(customers.map((c) => c.toMap()).toList());
-    final ok = await prefs.setString('customers_data_v8', encoded);
-    if (!ok) throw Exception('ذخیره اطلاعات در حافظه انجام نشد');
-    if (mounted) setState(() {});
+    await prefs.setString('customers_data_v8', encoded);
+    setState(() {});
   }
 
   @override
@@ -819,15 +816,32 @@ class _HomeScreenState extends State<HomeScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             ElevatedButton.icon(
-              icon: const Icon(Icons.copy),
-              label: const Text('کپی کد فایل پشتیبان'),
-              onPressed: () {
-                final encoded = jsonEncode(widget.customers.map((c) => c.toMap()).toList());
-                Clipboard.setData(ClipboardData(text: encoded));
-                Navigator.pop(ctx);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('کد متنی پشتیبان با موفقیت کپی شد!')),
-                );
+              icon: const Icon(Icons.save_alt),
+              label: const Text('ذخیره فایل پشتیبان داخل گوشی'),
+              onPressed: () async {
+                try {
+                  final encoded = jsonEncode(widget.customers.map((c) => c.toMap()).toList());
+                  final bytes = Uint8List.fromList(utf8.encode(encoded));
+                  final path = await FilePicker.platform.saveFile(
+                    dialogTitle: 'ذخیره فایل پشتیبان برق خودرو مهندس',
+                    fileName: 'bargh_khodro_backup_${DateTime.now().millisecondsSinceEpoch}.json',
+                    type: FileType.custom,
+                    allowedExtensions: ['json'],
+                    bytes: bytes,
+                  );
+                  if (path != null && mounted) {
+                    Navigator.pop(ctx);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('فایل پشتیبان ذخیره شد. آن را در پوشه انتخاب‌شده پیدا می‌کنید.')),
+                    );
+                  }
+                } catch (e) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('ذخیره پشتیبان انجام نشد: $e')),
+                    );
+                  }
+                }
               },
             ),
             const SizedBox(height: 12),
@@ -862,24 +876,14 @@ class _HomeScreenState extends State<HomeScreen> {
           ElevatedButton(
             onPressed: () {
               try {
-                final dynamic decodedJson = jsonDecode(codeCtrl.text.trim());
-                if (decodedJson is! List) {
-                  throw const FormatException('ساختار پشتیبان معتبر نیست');
-                }
-                // ابتدا کل فایل در حافظه موقت تبدیل می‌شود؛ سپس اطلاعات فعلی جایگزین می‌شوند.
-                final restored = decodedJson
-                    .map((e) => Customer.fromMap(Map<String, dynamic>.from(e as Map)))
-                    .toList();
+                final List decoded = jsonDecode(codeCtrl.text.trim());
                 setState(() {
-                  widget.customers
-                    ..clear()
-                    ..addAll(restored);
+                  widget.customers.clear();
+                  widget.customers.addAll(decoded.map((e) => Customer.fromMap(e)).toList());
                 });
                 widget.onDataChanged();
-                if (ctx.mounted) Navigator.pop(ctx);
-                if (mounted) ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('اطلاعات بازگردانی شد.')),
-                );
+                Navigator.pop(ctx);
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('اطلاعات بازگردانده شد!')));
               } catch (_) {
                 ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('کد پشتیبان نامعتبر است!')));
               }
@@ -1530,22 +1534,14 @@ class _ServiceEditDialogState extends State<_ServiceEditDialog> {
               return;
             }
             final enteredPaid = NumberHelper.safeParseInt(paidCtrl.text);
-            final safeDiscount = discount.clamp(0, subTotal).toInt();
-            final safeGrandTotal = subTotal - safeDiscount;
-            if (enteredPaid < 0 || enteredPaid > safeGrandTotal) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('مبلغ پرداختی باید بین صفر تا ${formatToman(safeGrandTotal)} باشد.')),
-              );
-              return;
-            }
             final record = ServiceRecord(
               id: widget.serviceToEdit?.id ?? DateTime.now().millisecondsSinceEpoch.toString(),
               date: dateCtrl.text.isNotEmpty ? dateCtrl.text.trim() : JalaliHelper.nowShamsi(),
               km: kmCtrl.text.trim(),
               warrantyNote: warrantyCtrl.text.trim(),
               paymentMethod: paymentMethod,
-              discount: safeDiscount,
-              paidAmount: paidCtrl.text.isEmpty ? safeGrandTotal : enteredPaid,
+              discount: discount,
+              paidAmount: paidCtrl.text.isEmpty ? grandTotal : enteredPaid,
               labors: List.from(laborsList),
               parts: List.from(partsList),
             );
@@ -1781,6 +1777,10 @@ class _CarEditDialogState extends State<_CarEditDialog> {
   late final TextEditingController letterCtrl;
   late final TextEditingController threeCtrl;
   late final TextEditingController provCtrl;
+  late final FocusNode twoFocus;
+  late final FocusNode letterFocus;
+  late final FocusNode threeFocus;
+  late final FocusNode provFocus;
 
   @override
   void initState() {
@@ -1790,6 +1790,10 @@ class _CarEditDialogState extends State<_CarEditDialog> {
     letterCtrl = TextEditingController(text: widget.carToEdit?.plateLetter ?? '');
     threeCtrl = TextEditingController(text: widget.carToEdit?.plateThreeDigits ?? '');
     provCtrl = TextEditingController(text: widget.carToEdit?.plateProvinceCode ?? '');
+    twoFocus = FocusNode();
+    letterFocus = FocusNode();
+    threeFocus = FocusNode();
+    provFocus = FocusNode();
   }
 
   @override
@@ -1799,6 +1803,10 @@ class _CarEditDialogState extends State<_CarEditDialog> {
     letterCtrl.dispose();
     threeCtrl.dispose();
     provCtrl.dispose();
+    twoFocus.dispose();
+    letterFocus.dispose();
+    threeFocus.dispose();
+    provFocus.dispose();
     super.dispose();
   }
 
@@ -1927,13 +1935,39 @@ class _CarEditDialogState extends State<_CarEditDialog> {
             const SizedBox(height: 12),
             Row(
               children: [
-                Expanded(child: TextField(controller: provCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(hintText: 'ایران'))),
+                Expanded(child: TextField(
+                  controller: provCtrl, focusNode: provFocus,
+                  keyboardType: TextInputType.number, maxLength: 2,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(2)],
+                  textInputAction: TextInputAction.done,
+                  decoration: const InputDecoration(hintText: 'ایران', counterText: ''),
+                )),
                 const SizedBox(width: 4),
-                Expanded(child: TextField(controller: threeCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(hintText: '۳ رقم'))),
+                Expanded(child: TextField(
+                  controller: threeCtrl, focusNode: threeFocus,
+                  keyboardType: TextInputType.number, maxLength: 3,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(3)],
+                  textInputAction: TextInputAction.next,
+                  onChanged: (v) { if (v.length == 3) provFocus.requestFocus(); },
+                  decoration: const InputDecoration(hintText: '۳ رقم', counterText: ''),
+                )),
                 const SizedBox(width: 4),
-                Expanded(child: TextField(controller: letterCtrl, decoration: const InputDecoration(hintText: 'حرف'))),
+                Expanded(child: TextField(
+                  controller: letterCtrl, focusNode: letterFocus,
+                  maxLength: 1, inputFormatters: [LengthLimitingTextInputFormatter(1)],
+                  textInputAction: TextInputAction.next,
+                  onChanged: (v) { if (v.isNotEmpty) threeFocus.requestFocus(); },
+                  decoration: const InputDecoration(hintText: 'حرف', counterText: ''),
+                )),
                 const SizedBox(width: 4),
-                Expanded(child: TextField(controller: twoCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(hintText: '۲ رقم'))),
+                Expanded(child: TextField(
+                  controller: twoCtrl, focusNode: twoFocus,
+                  keyboardType: TextInputType.number, maxLength: 2,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(2)],
+                  textInputAction: TextInputAction.next,
+                  onChanged: (v) { if (v.length == 2) letterFocus.requestFocus(); },
+                  decoration: const InputDecoration(hintText: '۲ رقم', counterText: ''),
+                )),
               ],
             ),
           ],
@@ -1980,33 +2014,20 @@ class _BulkSmsScreenState extends State<BulkSmsScreen> {
   List<String> _getValidPhones() {
     final Set<String> phones = {};
     for (var c in widget.customers) {
-      final p = NumberHelper.normalizePhone(c.phone);
+      final p = NumberHelper.cleanNumbers(c.phone);
       if (p.isNotEmpty && p.length >= 10) phones.add(p);
     }
     return phones.toList();
   }
 
-  String _csvCell(Object? value) {
-    final text = (value ?? '').toString();
-    return '"${text.replaceAll('"', '""')}"';
-  }
-
   void _exportExcelCsv() {
     final buffer = StringBuffer();
-    // This action copies CSV text; it does not create a downloadable XLSX file.
-    buffer.writeln(['نام مشتری', 'شماره تماس', 'تعداد خودرو', 'مانده بدهی (تومان)'].map(_csvCell).join(','));
-    for (final c in widget.customers) {
-      buffer.writeln([
-        c.name,
-        c.phone,
-        c.cars.length,
-        c.totalDebt,
-      ].map(_csvCell).join(','));
+    buffer.writeln('نام مشتری,شماره تماس,تعداد خودرو,مانده بدهی (تومان)');
+    for (var c in widget.customers) {
+      buffer.writeln('${c.name},${c.phone},${c.cars.length},${c.totalDebt}');
     }
-    Clipboard.setData(ClipboardData(text: '\\uFEFF${buffer.toString()}'));
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('متن CSV با موفقیت کپی شد؛ آن را در Excel جای‌گذاری کنید.')),
-    );
+    Clipboard.setData(ClipboardData(text: buffer.toString()));
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('فایل CSV اکسل در کلیپ‌بورد کپی شد.')));
   }
 
   @override
@@ -2030,7 +2051,7 @@ class _BulkSmsScreenState extends State<BulkSmsScreen> {
                   ElevatedButton.icon(
                     style: ElevatedButton.styleFrom(backgroundColor: Colors.teal[800]),
                     icon: const Icon(Icons.table_chart, size: 16),
-                    label: const Text('کپی CSV برای اکسل', style: TextStyle(fontSize: 12)),
+                    label: const Text('خروجی اکسل', style: TextStyle(fontSize: 12)),
                     onPressed: _exportExcelCsv,
                   ),
                 ],
@@ -2142,7 +2163,6 @@ class _DailyReportScreenState extends State<DailyReportScreen> with SingleTicker
     List<Map<String, dynamic>> servicesList = [];
     int totalLabor = 0;
     int totalParts = 0;
-    int totalDiscount = 0;
     int totalPos = 0;
     int totalCash = 0;
 
@@ -2155,7 +2175,6 @@ class _DailyReportScreenState extends State<DailyReportScreen> with SingleTicker
           if (isMatch) {
             totalLabor += s.laborTotal;
             totalParts += s.partsTotal;
-            totalDiscount += s.discount;
             if (s.paymentMethod.contains('POS') || s.paymentMethod.contains('کارت‌خوان')) {
               totalPos += s.paidAmount;
             } else {
@@ -2167,7 +2186,7 @@ class _DailyReportScreenState extends State<DailyReportScreen> with SingleTicker
       }
     }
 
-    final totalIncome = (totalLabor + totalParts - totalDiscount).clamp(0, 1 << 62).toInt();
+    final totalIncome = totalLabor + totalParts;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16.0),
@@ -2215,7 +2234,7 @@ class _DailyReportScreenState extends State<DailyReportScreen> with SingleTicker
               padding: const EdgeInsets.all(16.0),
               child: Column(
                 children: [
-                  const Text('💰 جمع اجرت خدمات (قبل از هزینه‌ها)', style: TextStyle(fontSize: 14, color: Colors.white70)),
+                  const Text('💰 دستمزد و سود خالص (اجرت‌ها)', style: TextStyle(fontSize: 14, color: Colors.white70)),
                   const SizedBox(height: 6),
                   Text(formatToman(totalLabor), style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.greenAccent)),
                   const Divider(height: 20),
@@ -2223,7 +2242,7 @@ class _DailyReportScreenState extends State<DailyReportScreen> with SingleTicker
                     mainAxisAlignment: MainAxisAlignment.spaceAround,
                     children: [
                       Column(children: [const Text('فروش قطعات', style: TextStyle(fontSize: 11, color: Colors.grey)), Text(formatToman(totalParts), style: const TextStyle(fontWeight: FontWeight.bold))]),
-                      Column(children: [const Text('فروش پس از تخفیف', style: TextStyle(fontSize: 11, color: Colors.grey)), Text(formatToman(totalIncome), style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.amberAccent))]),
+                      Column(children: [const Text('کل دخل ناخالص', style: TextStyle(fontSize: 11, color: Colors.grey)), Text(formatToman(totalIncome), style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.amberAccent))]),
                     ],
                   ),
                   const Divider(height: 20),

@@ -1,7 +1,7 @@
 name: auto_electric_app
 description: "نرم افزار مدیریت برق خودرو مهندس"
 publish_to: 'none'
-version: 1.0.0+2
+version: 1.0.0+1
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -16,6 +16,7 @@ dependencies:
   pdf: ^3.10.8
   printing: ^5.11.1
   url_launcher: ^6.2.5
+  file_picker: ^8.1.2
 
 dev_dependencies:
   flutter_test:
@@ -25,11 +26,8 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+
+  # تعریف فونت‌ها برای فاکتور آفلاین
   assets:
     - assets/fonts/Vazirmatn-Regular.ttf
     - assets/fonts/Vazirmatn-Bold.ttf
-
-flutter_launcher_icons:
-  android: true
-  image_path: "app_icon.png"
-  min_sdk_android: 21

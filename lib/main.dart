@@ -1,9 +1,7 @@
 import 'dart:convert';
-import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:intl/intl.dart' as intl;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -816,32 +814,15 @@ class _HomeScreenState extends State<HomeScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             ElevatedButton.icon(
-              icon: const Icon(Icons.save_alt),
-              label: const Text('ذخیره فایل پشتیبان داخل گوشی'),
-              onPressed: () async {
-                try {
-                  final encoded = jsonEncode(widget.customers.map((c) => c.toMap()).toList());
-                  final bytes = Uint8List.fromList(utf8.encode(encoded));
-                  final path = await FilePicker.platform.saveFile(
-                    dialogTitle: 'ذخیره فایل پشتیبان برق خودرو مهندس',
-                    fileName: 'bargh_khodro_backup_${DateTime.now().millisecondsSinceEpoch}.json',
-                    type: FileType.custom,
-                    allowedExtensions: ['json'],
-                    bytes: bytes,
-                  );
-                  if (path != null && mounted) {
-                    Navigator.pop(ctx);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('فایل پشتیبان ذخیره شد. آن را در پوشه انتخاب‌شده پیدا می‌کنید.')),
-                    );
-                  }
-                } catch (e) {
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('ذخیره پشتیبان انجام نشد: $e')),
-                    );
-                  }
-                }
+              icon: const Icon(Icons.copy),
+              label: const Text('کپی کد فایل پشتیبان'),
+              onPressed: () {
+                final encoded = jsonEncode(widget.customers.map((c) => c.toMap()).toList());
+                Clipboard.setData(ClipboardData(text: encoded));
+                Navigator.pop(ctx);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('کد متنی پشتیبان با موفقیت کپی شد!')),
+                );
               },
             ),
             const SizedBox(height: 12),
@@ -1777,10 +1758,6 @@ class _CarEditDialogState extends State<_CarEditDialog> {
   late final TextEditingController letterCtrl;
   late final TextEditingController threeCtrl;
   late final TextEditingController provCtrl;
-  late final FocusNode twoFocus;
-  late final FocusNode letterFocus;
-  late final FocusNode threeFocus;
-  late final FocusNode provFocus;
 
   @override
   void initState() {
@@ -1790,10 +1767,6 @@ class _CarEditDialogState extends State<_CarEditDialog> {
     letterCtrl = TextEditingController(text: widget.carToEdit?.plateLetter ?? '');
     threeCtrl = TextEditingController(text: widget.carToEdit?.plateThreeDigits ?? '');
     provCtrl = TextEditingController(text: widget.carToEdit?.plateProvinceCode ?? '');
-    twoFocus = FocusNode();
-    letterFocus = FocusNode();
-    threeFocus = FocusNode();
-    provFocus = FocusNode();
   }
 
   @override
@@ -1803,10 +1776,6 @@ class _CarEditDialogState extends State<_CarEditDialog> {
     letterCtrl.dispose();
     threeCtrl.dispose();
     provCtrl.dispose();
-    twoFocus.dispose();
-    letterFocus.dispose();
-    threeFocus.dispose();
-    provFocus.dispose();
     super.dispose();
   }
 
@@ -1935,39 +1904,13 @@ class _CarEditDialogState extends State<_CarEditDialog> {
             const SizedBox(height: 12),
             Row(
               children: [
-                Expanded(child: TextField(
-                  controller: provCtrl, focusNode: provFocus,
-                  keyboardType: TextInputType.number, maxLength: 2,
-                  inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(2)],
-                  textInputAction: TextInputAction.done,
-                  decoration: const InputDecoration(hintText: 'ایران', counterText: ''),
-                )),
+                Expanded(child: TextField(controller: provCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(hintText: 'ایران'))),
                 const SizedBox(width: 4),
-                Expanded(child: TextField(
-                  controller: threeCtrl, focusNode: threeFocus,
-                  keyboardType: TextInputType.number, maxLength: 3,
-                  inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(3)],
-                  textInputAction: TextInputAction.next,
-                  onChanged: (v) { if (v.length == 3) provFocus.requestFocus(); },
-                  decoration: const InputDecoration(hintText: '۳ رقم', counterText: ''),
-                )),
+                Expanded(child: TextField(controller: threeCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(hintText: '۳ رقم'))),
                 const SizedBox(width: 4),
-                Expanded(child: TextField(
-                  controller: letterCtrl, focusNode: letterFocus,
-                  maxLength: 1, inputFormatters: [LengthLimitingTextInputFormatter(1)],
-                  textInputAction: TextInputAction.next,
-                  onChanged: (v) { if (v.isNotEmpty) threeFocus.requestFocus(); },
-                  decoration: const InputDecoration(hintText: 'حرف', counterText: ''),
-                )),
+                Expanded(child: TextField(controller: letterCtrl, decoration: const InputDecoration(hintText: 'حرف'))),
                 const SizedBox(width: 4),
-                Expanded(child: TextField(
-                  controller: twoCtrl, focusNode: twoFocus,
-                  keyboardType: TextInputType.number, maxLength: 2,
-                  inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(2)],
-                  textInputAction: TextInputAction.next,
-                  onChanged: (v) { if (v.length == 2) letterFocus.requestFocus(); },
-                  decoration: const InputDecoration(hintText: '۲ رقم', counterText: ''),
-                )),
+                Expanded(child: TextField(controller: twoCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(hintText: '۲ رقم'))),
               ],
             ),
           ],

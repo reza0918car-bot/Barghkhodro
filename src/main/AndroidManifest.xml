@@ -1,4 +1,0 @@
-<application
-    android:label="برق خودرو مهندس"
-    android:name="${applicationName}"
-    android:icon="@mipmap/ic_launcher">

@@ -106,7 +106,6 @@ String formatToman(int amount) {
 }
 
 // ======================== توابع ایزوله پردازش پس‌زمینه (Isolates) ========================
-// این توابع مانع از قفل شدن یا لگ زدن صفحه در تعداد ۳۰۰۰+ مشتری می‌شوند
 List<Customer> _decodeCustomersIsolate(String rawJson) {
   final List decoded = jsonDecode(rawJson);
   return decoded.map((e) => Customer.fromMap(e)).toList();
@@ -276,7 +275,6 @@ class Customer {
   String phone;
   List<Car> cars;
 
-  // فیلد ایندکس شده جهت سرچ آنی بدون افت فریم در ۳۰۰۰ رکورد
   late String searchKey;
 
   Customer({required this.id, required this.name, required this.phone, required this.cars}) {
@@ -332,7 +330,6 @@ class AutoElectricApp extends StatelessWidget {
           secondary: Colors.amberAccent,
           surface: Color(0xFF131D31),
         ),
-        // تغییر CardTheme به CardThemeData جهت سازگاری با نسخه‌های جدید فلاتر
         cardTheme: const CardThemeData(
           color: Color(0xFF131D31),
           elevation: 2,
@@ -525,7 +522,6 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       body: Column(
         children: [
-          // نوار آمار بالای صفحه
           Container(
             margin: const EdgeInsets.fromLTRB(12, 10, 12, 4),
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
@@ -574,8 +570,6 @@ class _HomeScreenState extends State<HomeScreen> {
               ],
             ),
           ),
-
-          // فیلد سرچ هوشمند و سریع
           Padding(
             padding: const EdgeInsets.all(12.0),
             child: TextField(
@@ -600,8 +594,6 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
           ),
-
-          // لیست بدون لگ پرونده‌ها با ListView.builder
           Expanded(
             child: _filteredList.isEmpty
                 ? const Center(child: Text('پرونده‌ای یافت نشد.', style: TextStyle(color: Colors.grey)))
@@ -855,7 +847,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // دیالوگ هوشمند پشتیبان‌گیری در قالب فایل واقعی
   void _openSmartBackupDialog(BuildContext context) {
     showDialog(
       context: context,
@@ -899,7 +890,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // خروجی فایل واقعی از طریق سامانه اشتراک امن نیتیو
   Future<void> _exportBackupAsFile(BuildContext context) async {
     try {
       final rawList = widget.customers.map((c) => c.toMap()).toList();
@@ -908,7 +898,6 @@ class _HomeScreenState extends State<HomeScreen> {
       final shamsiDate = JalaliHelper.nowShamsi().replaceAll('/', '_');
       final fileName = 'پشتیبان_برق_خودرو_$shamsiDate.json';
 
-      // باز کردن دیالوگ ذخیره در فایل یا اشتراک مستقیم در واتساپ، تلگرام یا درایو
       await Printing.sharePdf(bytes: bytes, filename: fileName);
     } catch (e) {
       if (context.mounted) {
@@ -993,7 +982,6 @@ class RealisticPlateBadge extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            // نشان پرچم و I.R. IRAN
             Container(
               width: 14,
               height: 26,
@@ -1030,7 +1018,7 @@ class RealisticPlateBadge extends StatelessWidget {
   }
 }
 
-// ======================== دیالوگ ثبت خودرو با پلاک کاملاً استاندارد ========================
+// ======================== دیالوگ ثبت خودرو ========================
 class _CarEditDialog extends StatefulWidget {
   final Car? carToEdit;
   final Customer customer;
@@ -1097,7 +1085,6 @@ class _CarEditDialogState extends State<_CarEditDialog> {
       return;
     }
 
-    // اعتبارسنجی تکراری نبودن پلاک در کل سیستم
     if (two.isNotEmpty && three.isNotEmpty) {
       for (final cust in widget.existingCustomers) {
         for (final car in cust.cars) {
@@ -1136,8 +1123,6 @@ class _CarEditDialogState extends State<_CarEditDialog> {
               ),
             ),
             const SizedBox(height: 8),
-
-            // پیشنهاد سریع مدل خودرو
             const Text('انتخاب سریع خودرو:', style: TextStyle(fontSize: 11, color: Colors.white70)),
             const SizedBox(height: 4),
             SingleChildScrollView(
@@ -1155,11 +1140,8 @@ class _CarEditDialogState extends State<_CarEditDialog> {
               ),
             ),
             const SizedBox(height: 14),
-
             const Text('شماره پلاک ملی خودرو:', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.cyanAccent)),
             const SizedBox(height: 6),
-
-            // پلاک هوشمند با محدودیت ۲ رقم، ۳ رقم، و کد استان با پرش خودکار
             Directionality(
               textDirection: TextDirection.ltr,
               child: Container(
@@ -1186,8 +1168,6 @@ class _CarEditDialogState extends State<_CarEditDialog> {
                       ),
                     ),
                     const SizedBox(width: 6),
-
-                    // ۲ رقم اول (محدود به دقیقاً ۲ رقم با پرش خودکار به ۳ رقم)
                     SizedBox(
                       width: 44,
                       child: TextField(
@@ -1204,8 +1184,6 @@ class _CarEditDialogState extends State<_CarEditDialog> {
                         },
                       ),
                     ),
-
-                    // لیست کشویی حروف استاندارد پلاک
                     DropdownButton<String>(
                       value: selectedLetter,
                       dropdownColor: const Color(0xFF1E293B),
@@ -1214,8 +1192,6 @@ class _CarEditDialogState extends State<_CarEditDialog> {
                       items: kIranPlateLetters.map((l) => DropdownMenuItem(value: l, child: Text(l))).toList(),
                       onChanged: (v) => setState(() => selectedLetter = v ?? 'ب'),
                     ),
-
-                    // ۳ رقم پلاک (محدود به دقیقاً ۳ رقم با پرش به کد استان)
                     SizedBox(
                       width: 58,
                       child: TextField(
@@ -1232,10 +1208,7 @@ class _CarEditDialogState extends State<_CarEditDialog> {
                         },
                       ),
                     ),
-
                     Container(height: 38, width: 1.5, color: Colors.black45, margin: const EdgeInsets.symmetric(horizontal: 4)),
-
-                    // کد ۲ رقمی ایران (استان)
                     Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
@@ -1540,9 +1513,21 @@ class _CarServicesScreenState extends State<CarServicesScreen> {
     } catch (_) {}
   }
 
+  // ======================== تابع اصلاح‌شده چاپ فاکتور با فونت فارسی ========================
   Future<void> _printPdfInvoice(ServiceRecord service, {required bool isThermal}) async {
     try {
-      final pdf = pw.Document();
+      // دانلود یا بارگذاری فونت استاندارد فارسی (وزیر متن)
+      final farsiFont = await PdfGoogleFonts.vazirmatnRegular();
+      final farsiFontBold = await PdfGoogleFonts.vazirmatnBold();
+
+      // ساخت قالب سند بر پایه فونت فارسی
+      final pdf = pw.Document(
+        theme: pw.ThemeData.withFont(
+          base: farsiFont,
+          bold: farsiFontBold,
+        ),
+      );
+
       final pageFormat = isThermal ? PdfPageFormat.roll80 : PdfPageFormat.a4;
 
       pdf.addPage(
@@ -1556,7 +1541,15 @@ class _CarServicesScreenState extends State<CarServicesScreen> {
                 crossAxisAlignment: pw.CrossAxisAlignment.start,
                 mainAxisSize: pw.MainAxisSize.min,
                 children: [
-                  pw.Center(child: pw.Text('کلینیک برق خودرو مهندس', style: pw.TextStyle(fontSize: isThermal ? 13 : 18, fontWeight: pw.FontWeight.bold))),
+                  pw.Center(
+                    child: pw.Text(
+                      'کلینیک برق خودرو مهندس',
+                      style: pw.TextStyle(
+                        fontSize: isThermal ? 13 : 18,
+                        fontWeight: pw.FontWeight.bold,
+                      ),
+                    ),
+                  ),
                   pw.Divider(),
                   pw.Text('مشتری: ${widget.customer.name}  |  تلفن: ${widget.customer.phone}', style: pw.TextStyle(fontSize: isThermal ? 8 : 10)),
                   pw.Text('خودرو: ${widget.car.model}  |  پلاک: ${widget.car.fullPlate}', style: pw.TextStyle(fontSize: isThermal ? 8 : 10)),
@@ -1569,6 +1562,16 @@ class _CarServicesScreenState extends State<CarServicesScreen> {
                           pw.Text(formatToman(l.cost), style: pw.TextStyle(fontSize: isThermal ? 8 : 10)),
                         ],
                       )),
+                  if (service.parts.isNotEmpty) ...[
+                    pw.Divider(),
+                    ...service.parts.map((p) => pw.Row(
+                          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                          children: [
+                            pw.Text('قطعه: ${p.name}', style: pw.TextStyle(fontSize: isThermal ? 8 : 10)),
+                            pw.Text(formatToman(p.price), style: pw.TextStyle(fontSize: isThermal ? 8 : 10)),
+                          ],
+                        )),
+                  ],
                   pw.Divider(),
                   pw.Row(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, children: [
                     pw.Text('مبلغ نهایی:', style: pw.TextStyle(fontSize: isThermal ? 9 : 11, fontWeight: pw.FontWeight.bold)),
@@ -1617,7 +1620,7 @@ class _CarServicesScreenState extends State<CarServicesScreen> {
   }
 }
 
-// ======================== دیالوگ فاکتور با چیپ‌های انتخاب سریع اجرت ========================
+// ======================== دیالوگ فاکتور ========================
 class _ServiceEditDialog extends StatefulWidget {
   final ServiceRecord? serviceToEdit;
   final Function(ServiceRecord) onSave;
@@ -1686,8 +1689,6 @@ class _ServiceEditDialogState extends State<_ServiceEditDialog> {
               ),
               TextField(controller: warrantyCtrl, decoration: const InputDecoration(labelText: 'یادداشت/گارانتی قطعه')),
               const SizedBox(height: 10),
-
-              // انتخاب سریع اجرت‌های پرکاربرد برق خودرو با چیپس
               const Text('خدمات پرکاربرد برق خودرو (کلیک برای افزودن):', style: TextStyle(fontSize: 11, color: Colors.cyanAccent)),
               const SizedBox(height: 4),
               SingleChildScrollView(
@@ -1711,8 +1712,6 @@ class _ServiceEditDialogState extends State<_ServiceEditDialog> {
                 ),
               ),
               const SizedBox(height: 10),
-
-              // بخش اجرت‌ها
               Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(color: const Color(0xFF0A0F1D), borderRadius: BorderRadius.circular(10)),
@@ -1744,8 +1743,6 @@ class _ServiceEditDialogState extends State<_ServiceEditDialog> {
                 ),
               ),
               const SizedBox(height: 8),
-
-              // بخش قطعات
               Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(color: const Color(0xFF0A0F1D), borderRadius: BorderRadius.circular(10)),
@@ -1968,7 +1965,7 @@ class DebtorsScreen extends StatelessWidget {
   }
 }
 
-// ======================== باشگاه مشتریان و اکسل ========================
+// ======================== باشگاه مشتریان ========================
 class BulkSmsScreen extends StatefulWidget {
   final List<Customer> customers;
 
@@ -2007,7 +2004,7 @@ class _BulkSmsScreenState extends State<BulkSmsScreen> {
     final phones = _getValidPhones();
 
     return Scaffold(
-      appBar: AppBar(title: const Text('📢 باشگاه مشتریان و خروجی اکسل'), backgroundColor: const Color(0xFF0F172A)),
+      appBar: AppBar(title: const Text('📢 باشگاه مشتریان و پیامک گروهی'), backgroundColor: const Color(0xFF0F172A)),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
         child: Column(

@@ -324,8 +324,12 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     if (raw != null) {
       try {
         final List decoded = jsonDecode(raw);
+        final loadedCustomers = decoded
+            .map((e) => Customer.fromMap(Map<String, dynamic>.from(e as Map)))
+            .toList();
+        if (!mounted) return;
         setState(() {
-          customers = decoded.map((e) => Customer.fromMap(e)).toList();
+          customers = loadedCustomers;
           _isLoading = false;
         });
         return;
@@ -333,14 +337,15 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
         debugPrint('Error loading: $e');
       }
     }
-    setState(() => _isLoading = false);
+    if (mounted) setState(() => _isLoading = false);
   }
 
   Future<void> _saveData() async {
     final prefs = await SharedPreferences.getInstance();
     final String encoded = jsonEncode(customers.map((c) => c.toMap()).toList());
-    await prefs.setString('customers_data_v8', encoded);
-    setState(() {});
+    final ok = await prefs.setString('customers_data_v8', encoded);
+    if (!ok) throw Exception('ذخیره اطلاعات در حافظه انجام نشد');
+    if (mounted) setState(() {});
   }
 
   @override
@@ -857,14 +862,24 @@ class _HomeScreenState extends State<HomeScreen> {
           ElevatedButton(
             onPressed: () {
               try {
-                final List decoded = jsonDecode(codeCtrl.text.trim());
+                final dynamic decodedJson = jsonDecode(codeCtrl.text.trim());
+                if (decodedJson is! List) {
+                  throw const FormatException('ساختار پشتیبان معتبر نیست');
+                }
+                // ابتدا کل فایل در حافظه موقت تبدیل می‌شود؛ سپس اطلاعات فعلی جایگزین می‌شوند.
+                final restored = decodedJson
+                    .map((e) => Customer.fromMap(Map<String, dynamic>.from(e as Map)))
+                    .toList();
                 setState(() {
-                  widget.customers.clear();
-                  widget.customers.addAll(decoded.map((e) => Customer.fromMap(e)).toList());
+                  widget.customers
+                    ..clear()
+                    ..addAll(restored);
                 });
                 widget.onDataChanged();
-                Navigator.pop(ctx);
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('اطلاعات بازگردانده شد!')));
+                if (ctx.mounted) Navigator.pop(ctx);
+                if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('اطلاعات بازگردانی شد.')),
+                );
               } catch (_) {
                 ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('کد پشتیبان نامعتبر است!')));
               }
@@ -1515,14 +1530,22 @@ class _ServiceEditDialogState extends State<_ServiceEditDialog> {
               return;
             }
             final enteredPaid = NumberHelper.safeParseInt(paidCtrl.text);
+            final safeDiscount = discount.clamp(0, subTotal).toInt();
+            final safeGrandTotal = subTotal - safeDiscount;
+            if (enteredPaid < 0 || enteredPaid > safeGrandTotal) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('مبلغ پرداختی باید بین صفر تا ${formatToman(safeGrandTotal)} باشد.')),
+              );
+              return;
+            }
             final record = ServiceRecord(
               id: widget.serviceToEdit?.id ?? DateTime.now().millisecondsSinceEpoch.toString(),
               date: dateCtrl.text.isNotEmpty ? dateCtrl.text.trim() : JalaliHelper.nowShamsi(),
               km: kmCtrl.text.trim(),
               warrantyNote: warrantyCtrl.text.trim(),
               paymentMethod: paymentMethod,
-              discount: discount,
-              paidAmount: paidCtrl.text.isEmpty ? grandTotal : enteredPaid,
+              discount: safeDiscount,
+              paidAmount: paidCtrl.text.isEmpty ? safeGrandTotal : enteredPaid,
               labors: List.from(laborsList),
               parts: List.from(partsList),
             );
@@ -1957,20 +1980,33 @@ class _BulkSmsScreenState extends State<BulkSmsScreen> {
   List<String> _getValidPhones() {
     final Set<String> phones = {};
     for (var c in widget.customers) {
-      final p = NumberHelper.cleanNumbers(c.phone);
+      final p = NumberHelper.normalizePhone(c.phone);
       if (p.isNotEmpty && p.length >= 10) phones.add(p);
     }
     return phones.toList();
   }
 
+  String _csvCell(Object? value) {
+    final text = (value ?? '').toString();
+    return '"${text.replaceAll('"', '""')}"';
+  }
+
   void _exportExcelCsv() {
     final buffer = StringBuffer();
-    buffer.writeln('نام مشتری,شماره تماس,تعداد خودرو,مانده بدهی (تومان)');
-    for (var c in widget.customers) {
-      buffer.writeln('${c.name},${c.phone},${c.cars.length},${c.totalDebt}');
+    // This action copies CSV text; it does not create a downloadable XLSX file.
+    buffer.writeln(['نام مشتری', 'شماره تماس', 'تعداد خودرو', 'مانده بدهی (تومان)'].map(_csvCell).join(','));
+    for (final c in widget.customers) {
+      buffer.writeln([
+        c.name,
+        c.phone,
+        c.cars.length,
+        c.totalDebt,
+      ].map(_csvCell).join(','));
     }
-    Clipboard.setData(ClipboardData(text: buffer.toString()));
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('فایل CSV اکسل در کلیپ‌بورد کپی شد.')));
+    Clipboard.setData(ClipboardData(text: '\\uFEFF${buffer.toString()}'));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('متن CSV با موفقیت کپی شد؛ آن را در Excel جای‌گذاری کنید.')),
+    );
   }
 
   @override
@@ -1994,7 +2030,7 @@ class _BulkSmsScreenState extends State<BulkSmsScreen> {
                   ElevatedButton.icon(
                     style: ElevatedButton.styleFrom(backgroundColor: Colors.teal[800]),
                     icon: const Icon(Icons.table_chart, size: 16),
-                    label: const Text('خروجی اکسل', style: TextStyle(fontSize: 12)),
+                    label: const Text('کپی CSV برای اکسل', style: TextStyle(fontSize: 12)),
                     onPressed: _exportExcelCsv,
                   ),
                 ],
@@ -2106,6 +2142,7 @@ class _DailyReportScreenState extends State<DailyReportScreen> with SingleTicker
     List<Map<String, dynamic>> servicesList = [];
     int totalLabor = 0;
     int totalParts = 0;
+    int totalDiscount = 0;
     int totalPos = 0;
     int totalCash = 0;
 
@@ -2118,6 +2155,7 @@ class _DailyReportScreenState extends State<DailyReportScreen> with SingleTicker
           if (isMatch) {
             totalLabor += s.laborTotal;
             totalParts += s.partsTotal;
+            totalDiscount += s.discount;
             if (s.paymentMethod.contains('POS') || s.paymentMethod.contains('کارت‌خوان')) {
               totalPos += s.paidAmount;
             } else {
@@ -2129,7 +2167,7 @@ class _DailyReportScreenState extends State<DailyReportScreen> with SingleTicker
       }
     }
 
-    final totalIncome = totalLabor + totalParts;
+    final totalIncome = (totalLabor + totalParts - totalDiscount).clamp(0, 1 << 62).toInt();
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16.0),
@@ -2177,7 +2215,7 @@ class _DailyReportScreenState extends State<DailyReportScreen> with SingleTicker
               padding: const EdgeInsets.all(16.0),
               child: Column(
                 children: [
-                  const Text('💰 دستمزد و سود خالص (اجرت‌ها)', style: TextStyle(fontSize: 14, color: Colors.white70)),
+                  const Text('💰 جمع اجرت خدمات (قبل از هزینه‌ها)', style: TextStyle(fontSize: 14, color: Colors.white70)),
                   const SizedBox(height: 6),
                   Text(formatToman(totalLabor), style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.greenAccent)),
                   const Divider(height: 20),
@@ -2185,7 +2223,7 @@ class _DailyReportScreenState extends State<DailyReportScreen> with SingleTicker
                     mainAxisAlignment: MainAxisAlignment.spaceAround,
                     children: [
                       Column(children: [const Text('فروش قطعات', style: TextStyle(fontSize: 11, color: Colors.grey)), Text(formatToman(totalParts), style: const TextStyle(fontWeight: FontWeight.bold))]),
-                      Column(children: [const Text('کل دخل ناخالص', style: TextStyle(fontSize: 11, color: Colors.grey)), Text(formatToman(totalIncome), style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.amberAccent))]),
+                      Column(children: [const Text('فروش پس از تخفیف', style: TextStyle(fontSize: 11, color: Colors.grey)), Text(formatToman(totalIncome), style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.amberAccent))]),
                     ],
                   ),
                   const Divider(height: 20),

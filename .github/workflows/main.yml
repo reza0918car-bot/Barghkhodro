@@ -25,7 +25,6 @@ jobs:
           channel: 'stable'
           cache: true
 
-      # مرحله هوشمند: بررسی کامل بودن پوشه اندروید و بازسازی در صورت نقص
       - name: Fix or Generate Android Files
         run: |
           if [ ! -f "android/app/build.gradle" ] && [ ! -f "android/app/build.gradle.kts" ]; then
@@ -33,13 +32,30 @@ jobs:
             rm -rf android
             flutter create --platforms=android .
           fi
+          # سبک‌سازی فایل گریدل برای جلوگیری از قطعی و ارور ۵۰۴
+          if [ -f "android/gradle/wrapper/gradle-wrapper.properties" ]; then
+            sed -i 's/-all.zip/-bin.zip/g' android/gradle/wrapper/gradle-wrapper.properties
+          fi
           chmod +x android/gradlew || true
 
       - name: Install Dependencies
         run: flutter pub get
 
-      - name: Build APK
-        run: flutter build apk --release
+      - name: Build APK (with auto-retry)
+        run: |
+          success=0
+          for i in 1 2 3; do
+            echo "Build attempt $i..."
+            if flutter build apk --release; then
+              success=1
+              break
+            fi
+            echo "Download failed due to server timeout, retrying in 10 seconds..."
+            sleep 10
+          done
+          if [ $success -ne 1 ]; then
+            exit 1
+          fi
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4

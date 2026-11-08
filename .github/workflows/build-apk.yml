@@ -27,8 +27,18 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Set up Android SDK tools
-        uses: android-actions/setup-android@v3
+      - name: Set up Android SDK
+  uses: android-actions/setup-android@v3
+
+- name: Install Android SDK packages
+  run: |
+    sdkmanager --install \
+      "platform-tools" \
+      "platforms;android-36" \
+      "build-tools;36.0.0"
+
+- name: Accept Android licenses
+  run: yes | sdkmanager --licenses
 
       - name: Generate Android project files if missing
         shell: bash

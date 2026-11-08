@@ -1,4 +1,4 @@
-name: Build Android APK
+ame: Build Android APK
 
 on:
   push:
@@ -9,6 +9,18 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
+    - name: Fix or Generate Android Files
+        run: |
+          if [ ! -f "android/app/build.gradle" ] && [ ! -f "android/app/build.gradle.kts" ]; then
+            echo "Android files missing. Regenerating..."
+            rm -rf android
+            flutter create --platforms=android .
+          fi
+
+
+          sed -i 's/android:label="[^"]*"/android:label="برق خودرو مهندس"/g' android/app/src/main/AndroidManifest.xml
+
+          chmod +x android/gradlew || true
       - uses: actions/checkout@v4
 
       - name: Set up Java

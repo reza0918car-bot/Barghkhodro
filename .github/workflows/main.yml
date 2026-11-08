@@ -17,7 +17,8 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
-          java-version: '17' 
+          java-version: '17'
+
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
@@ -30,6 +31,14 @@ jobs:
             echo "Android files missing. Regenerating..."
             rm -rf android
             flutter create --platforms=android .
+          fi
+
+          # ۱. تغییر نام برنامه به «برق خودرو مهندس»
+          sed -i 's/android:label="[^"]*"/android:label="برق خودرو مهندس"/g' android/app/src/main/AndroidManifest.xml
+
+          # ۲. اضافه کردن مجوز اینترنت برای دانلود و نمایش فونت فارسی
+          if ! grep -q "android.permission.INTERNET" android/app/src/main/AndroidManifest.xml; then
+            sed -i '/<manifest/a \    <uses-permission android:name="android.permission.INTERNET"\/>' android/app/src/main/AndroidManifest.xml
           fi
 
           # دانلود مستقیم گریدل از سرور پرسرعت کمکی برای دور زدن قطعی 504 گیت‌هاب

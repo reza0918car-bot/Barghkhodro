@@ -1501,11 +1501,49 @@ class _CarServicesScreenState extends State<CarServicesScreen> {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('شماره همراه مشتری ثبت نشده است!')));
       return;
     }
-    final msg = 'مشتری گرامی ${widget.customer.name}\n'
-        'خودروی ${widget.car.model} (${widget.car.fullPlate}) آماده تحویل است.\n'
-        'مبلغ کل: ${formatToman(s.grandTotal)}\n'
-        '⚡ کلینیک برق خودرو مهندس';
 
+    final StringBuffer buffer = StringBuffer();
+    buffer.writeln('مشتری گرامی ${widget.customer.name}');
+    buffer.writeln('خودروی ${widget.car.model} (${widget.car.fullPlate}) آماده تحویل است.');
+    buffer.writeln('--------------------');
+
+    // لیست اجرت‌ها و خدمات انجام شده
+    if (s.labors.isNotEmpty) {
+      buffer.writeln('🔧 خدمات انجام شده:');
+      for (final l in s.labors) {
+        buffer.writeln('• ${l.title}: ${formatToman(l.cost)}');
+      }
+    }
+
+    // لیست قطعات خریداری و تعویض شده
+    if (s.parts.isNotEmpty) {
+      if (s.labors.isNotEmpty) buffer.writeln('');
+      buffer.writeln('🔩 قطعات و لوازم:');
+      for (final p in s.parts) {
+        buffer.writeln('• ${p.name}: ${formatToman(p.price)}');
+      }
+    }
+
+    buffer.writeln('--------------------');
+    buffer.writeln('💰 جمع کل: ${formatToman(s.grandTotal)}');
+    
+    if (s.discount > 0) {
+      buffer.writeln('🎁 تخفیف: ${formatToman(s.discount)}');
+    }
+    
+    buffer.writeln('💳 پرداختی: ${formatToman(s.paidAmount)}');
+
+    if (s.remainingDebt > 0) {
+      buffer.writeln('⚠️ مانده حساب (بدهی): ${formatToman(s.remainingDebt)}');
+    }
+
+    if (s.warrantyNote.isNotEmpty) {
+      buffer.writeln('🛡 گارانتی: ${s.warrantyNote}');
+    }
+
+    buffer.writeln('⚡ کلینیک برق خودرو مهندس');
+
+    final msg = buffer.toString();
     final encoded = Uri.encodeComponent(msg);
     final uri = Uri.parse('sms:$cleanPhone?body=$encoded');
     try {

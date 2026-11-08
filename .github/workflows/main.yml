@@ -28,14 +28,29 @@ jobs:
       - name: Fix or Generate Android Files
         run: |
           if [ ! -f "android/app/build.gradle" ] && [ ! -f "android/app/build.gradle.kts" ]; then
-            echo "Android files are missing or incomplete. Regenerating..."
+            echo "Android files missing. Regenerating..."
             rm -rf android
             flutter create --platforms=android .
           fi
-          # سبک‌سازی فایل گریدل برای جلوگیری از قطعی و ارور ۵۰۴
-          if [ -f "android/gradle/wrapper/gradle-wrapper.properties" ]; then
-            sed -i 's/-all.zip/-bin.zip/g' android/gradle/wrapper/gradle-wrapper.properties
+
+          # دانلود مستقیم گریدل از سرور پرسرعت کمکی برای دور زدن قطعی 504 گیت‌هاب
+          WRAPPER_FILE="android/gradle/wrapper/gradle-wrapper.properties"
+          if [ -f "$WRAPPER_FILE" ]; then
+            sed -i 's/-all.zip/-bin.zip/g' "$WRAPPER_FILE"
+            GRADLE_ZIP=$(grep "distributionUrl" "$WRAPPER_FILE" | grep -o "gradle-.*\.zip" | head -n 1)
+            echo "Target Gradle zip: $GRADLE_ZIP"
+
+            if [ -n "$GRADLE_ZIP" ]; then
+              echo "Downloading Gradle from fast mirror..."
+              curl -fL --retry 5 "https://mirrors.cloud.tencent.com/gradle/$GRADLE_ZIP" -o "android/gradle/wrapper/$GRADLE_ZIP" || true
+
+              if [ -f "android/gradle/wrapper/$GRADLE_ZIP" ]; then
+                echo "Successfully downloaded. Switching to local Gradle distribution."
+                sed -i "s|distributionUrl=.*|distributionUrl=$GRADLE_ZIP|" "$WRAPPER_FILE"
+              fi
+            fi
           fi
+
           chmod +x android/gradlew || true
 
       - name: Install Dependencies
@@ -45,13 +60,13 @@ jobs:
         run: |
           success=0
           for i in 1 2 3; do
-            echo "Build attempt $i..."
+            echo "Build attempt $i of 3..."
             if flutter build apk --release; then
               success=1
               break
             fi
-            echo "Download failed due to server timeout, retrying in 10 seconds..."
-            sleep 10
+            echo "Build attempt $i failed, retrying in 15 seconds..."
+            sleep 15
           done
           if [ $success -ne 1 ]; then
             exit 1

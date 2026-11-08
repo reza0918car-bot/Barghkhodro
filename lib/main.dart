@@ -332,13 +332,10 @@ class AutoElectricApp extends StatelessWidget {
           secondary: Colors.amberAccent,
           surface: Color(0xFF131D31),
         ),
-        cardTheme: CardTheme(
-          color: const Color(0xFF131D31),
+        // تغییر CardTheme به CardThemeData جهت سازگاری با نسخه‌های جدید فلاتر
+        cardTheme: const CardThemeData(
+          color: Color(0xFF131D31),
           elevation: 2,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-            side: const BorderSide(color: Colors.white10),
-          ),
         ),
       ),
       home: const MainNavigationScreen(),

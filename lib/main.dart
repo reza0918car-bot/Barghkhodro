@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:cross_file/cross_file.dart';
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -1268,17 +1267,18 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  Future<void> _pickAndRestoreBackupFile(BuildContext context) async {
+    Future<void> _pickAndRestoreBackupFile(BuildContext context) async {
     try {
-      List<PlatformFile>? result = await FilePicker.platform.pickFiles(
+      // 👈 استفاده از API جدید file_picker (بدون platform)
+      final result = await FilePicker.pickFiles(
         type: FileType.custom,
         allowedExtensions: ['json'],
       );
 
-      if (result == null || result.isEmpty) return; 
+      if (result == null || result.isEmpty) return;
 
-      PlatformFile file = result.first;
-      String filePath = file.path!;
+      final PlatformFile file = result.first;
+      final String filePath = file.path!;
 
       final fileContent = await File(filePath).readAsString(encoding: utf8);
       final parsed = await compute(_decodeCustomersIsolate, fileContent);
@@ -1337,7 +1337,6 @@ class _HomeScreenState extends State<HomeScreen> {
       }
     }
   }
-}
 
 // ======================== صفحه مدیریت قیمت‌ها ========================
 class TemplatesManagerScreen extends StatefulWidget {

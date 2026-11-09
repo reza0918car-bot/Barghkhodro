@@ -1,14 +1,18 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:intl/intl.dart' as intl;
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 void main() {
@@ -16,20 +20,18 @@ void main() {
   runApp(const AutoElectricApp());
 }
 
-// ======================== لیست حروف معتبر پلاک ملی ایران ========================
+// ======================== ثابت‌ها ========================
+/// حروف استاندارد پلاک ملی ایران (۱۳ حرف)
 const List<String> kIranPlateLetters = [
-  'ب', 'ج', 'د', 'س', 'ص', 'ط', 'ق', 'ل', 'م', 'ن', 'و', 'هـ', 'ی',
-  'الف', 'پ', 'ت', 'ث', 'ز', 'ش', 'ع', 'ف', 'ک', 'گ', '♿'
+  'ب', 'ج', 'د', 'س', 'ص', 'ط', 'ق', 'ل', 'م', 'ن', 'و', 'ه', 'ی',
 ];
 
-// لیست خودروهای متداول جهت انتخاب سریع
 const List<String> kPopularCars = [
   'پژو پارس', 'پژو ۲۰۶', 'پژو ۲۰۷', 'پژو ۴۰۵', 'پراید ۱۳۱', 'پراید ۱۱۱',
   'کوییک', 'تیبا', 'ساینا', 'سمند EF7', 'دنا پلاس', 'تارا', 'شاهین',
-  'رانا', 'نیسان وانت', 'پیکان وانت', 'ال ۹۰ (تندر)', 'ام‌وی‌ام (MVM)', 'جک (JAC)'
+  'رانا', 'نیسان وانت', 'پیکان وانت', 'ال ۹۰ (تندر)', 'ام‌وی‌ام (MVM)', 'جک (JAC)',
 ];
 
-// لیست خدمات پرکاربرد برق خودرو با اجرت پیشنهادی پایه (تومان)
 const List<Map<String, dynamic>> kQuickLabors = [
   {'title': 'تعمیر و سرویس دینام', 'cost': 350000},
   {'title': 'تعمیر و سرویس استارت', 'cost': 350000},
@@ -41,13 +43,12 @@ const List<Map<String, dynamic>> kQuickLabors = [
   {'title': 'شارژ گاز و نشت‌یابی کولر', 'cost': 450000},
 ];
 
-// ======================== ابزارهای کمکی و بهینه‌سازی ========================
+// ======================== ابزارهای کمکی ========================
 class NumberHelper {
   static String cleanNumbers(String input) {
     const f = ['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹'];
     const a = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
     const e = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
-
     String res = input.trim();
     for (int i = 0; i < 10; i++) {
       res = res.replaceAll(f[i], e[i]).replaceAll(a[i], e[i]);
@@ -71,6 +72,11 @@ class NumberHelper {
     final cleaned = cleanNumbers(input);
     return int.tryParse(cleaned) ?? 0;
   }
+}
+
+/// نرمال‌سازی حرف پلاک (برای سازگاری با داده‌های قدیمی)
+String normalizePlateLetter(String letter) {
+  return letter.trim().replaceAll('هـ', 'ه').replaceAll('ي', 'ی').replaceAll('ك', 'ک');
 }
 
 class JalaliHelper {
@@ -100,46 +106,34 @@ class JalaliHelper {
   }
 }
 
-String formatToman(int amount) {
-  final formatter = intl.NumberFormat('#,###');
-  return '${formatter.format(amount)} تومان';
-}
+final intl.NumberFormat _tomanFormatter = intl.NumberFormat('#,###', 'fa');
+String formatToman(int amount) => '${_tomanFormatter.format(amount)} تومان';
 
-// ======================== توابع ایزوله پردازش پس‌زمینه (Isolates) ========================
+// ======================== Isolates ========================
 List<Customer> _decodeCustomersIsolate(String rawJson) {
   final List decoded = jsonDecode(rawJson);
-  return decoded.map((e) => Customer.fromMap(e)).toList();
+  return decoded.map((e) => Customer.fromMap(e as Map<String, dynamic>)).toList();
 }
 
-String _encodeCustomersIsolate(List<Map<String, dynamic>> rawMaps) {
-  return jsonEncode(rawMaps);
-}
+String _encodeCustomersIsolate(List<Map<String, dynamic>> rawMaps) => jsonEncode(rawMaps);
 
-// ======================== مدل‌های داده ========================
+// ======================== مدل‌ها ========================
 class LaborItem {
   String title;
   int cost;
-
   LaborItem({required this.title, required this.cost});
-
   Map<String, dynamic> toMap() => {'title': title, 'cost': cost};
-  factory LaborItem.fromMap(Map<String, dynamic> map) => LaborItem(
-        title: map['title'] ?? '',
-        cost: map['cost'] ?? 0,
-      );
+  factory LaborItem.fromMap(Map<String, dynamic> m) =>
+      LaborItem(title: m['title'] ?? '', cost: m['cost'] ?? 0);
 }
 
 class PartItem {
   String name;
   int price;
-
   PartItem({required this.name, required this.price});
-
   Map<String, dynamic> toMap() => {'name': name, 'price': price};
-  factory PartItem.fromMap(Map<String, dynamic> map) => PartItem(
-        name: map['name'] ?? '',
-        price: map['price'] ?? 0,
-      );
+  factory PartItem.fromMap(Map<String, dynamic> m) =>
+      PartItem(name: m['name'] ?? '', price: m['price'] ?? 0);
 }
 
 class ServiceRecord {
@@ -165,8 +159,8 @@ class ServiceRecord {
     required this.parts,
   });
 
-  int get laborTotal => labors.fold(0, (sum, i) => sum + i.cost);
-  int get partsTotal => parts.fold(0, (sum, i) => sum + i.price);
+  int get laborTotal => labors.fold(0, (s, i) => s + i.cost);
+  int get partsTotal => parts.fold(0, (s, i) => s + i.price);
   int get subTotal => laborTotal + partsTotal;
   int get grandTotal => (subTotal - discount) > 0 ? (subTotal - discount) : 0;
   int get remainingDebt => (grandTotal - paidAmount) > 0 ? (grandTotal - paidAmount) : 0;
@@ -187,18 +181,19 @@ class ServiceRecord {
       };
 
   factory ServiceRecord.fromMap(Map<String, dynamic> map) {
+    final fallbackId = DateTime.now().microsecondsSinceEpoch.toString();
     List<LaborItem> parsedLabors = [];
     if (map['labors'] != null) {
       parsedLabors = (map['labors'] as List).map((l) => LaborItem.fromMap(l)).toList();
     } else if (map['title'] != null) {
       parsedLabors = [LaborItem(title: map['title'], cost: map['laborCost'] ?? 0)];
     }
-
-    final rawGrand = (map['parts'] as List? ?? []).fold(0, (sum, p) => sum + (p['price'] as int? ?? 0)) +
-        parsedLabors.fold(0, (sum, l) => sum + l.cost);
+    final rawGrand =
+        (map['parts'] as List? ?? []).fold<int>(0, (sum, p) => sum + ((p['price'] as int?) ?? 0)) +
+            parsedLabors.fold<int>(0, (sum, l) => sum + l.cost);
 
     return ServiceRecord(
-      id: map['id'] ?? '',
+      id: (map['id'] as String?)?.isNotEmpty == true ? map['id'] : fallbackId,
       date: map['date'] ?? JalaliHelper.nowShamsi(),
       km: map['km'] ?? '',
       warrantyNote: map['warrantyNote'] ?? '',
@@ -230,18 +225,18 @@ class Car {
     required this.services,
   });
 
-  String get fullPlate => '$plateTwoDigits $plateLetter $plateThreeDigits - ایران $plateProvinceCode';
+  String get fullPlate =>
+      '$plateTwoDigits $plateLetter $plateThreeDigits - ایران $plateProvinceCode';
 
   bool matchesPlate(String otherTwo, String otherLetter, String otherThree, String otherProv) {
     final t1 = NumberHelper.cleanNumbers(plateTwoDigits);
     final t2 = NumberHelper.cleanNumbers(otherTwo);
-    final l1 = plateLetter.trim();
-    final l2 = otherLetter.trim();
+    final l1 = normalizePlateLetter(plateLetter);
+    final l2 = normalizePlateLetter(otherLetter);
     final th1 = NumberHelper.cleanNumbers(plateThreeDigits);
     final th2 = NumberHelper.cleanNumbers(otherThree);
     final p1 = NumberHelper.cleanNumbers(plateProvinceCode);
     final p2 = NumberHelper.cleanNumbers(otherProv);
-
     if (t1.isEmpty || th1.isEmpty || t2.isEmpty || th2.isEmpty) return false;
     if (t1 != t2 || l1 != l2 || th1 != th2) return false;
     if (p1.isNotEmpty && p2.isNotEmpty) return p1 == p2;
@@ -259,7 +254,9 @@ class Car {
       };
 
   factory Car.fromMap(Map<String, dynamic> map) => Car(
-        id: map['id'] ?? DateTime.now().millisecondsSinceEpoch.toString(),
+        id: (map['id'] as String?)?.isNotEmpty == true
+            ? map['id']
+            : DateTime.now().microsecondsSinceEpoch.toString(),
         model: map['model'] ?? '',
         plateTwoDigits: map['two'] ?? '',
         plateLetter: map['letter'] ?? 'ب',
@@ -274,7 +271,6 @@ class Customer {
   String name;
   String phone;
   List<Car> cars;
-
   late String searchKey;
 
   Customer({required this.id, required this.name, required this.phone, required this.cars}) {
@@ -282,11 +278,15 @@ class Customer {
   }
 
   void updateSearchKey() {
-    final carsStr = cars.map((c) => '${c.model} ${c.fullPlate} ${c.plateTwoDigits}${c.plateLetter}${c.plateThreeDigits}').join(' ');
+    final carsStr = cars
+        .map((c) =>
+            '${c.model} ${c.fullPlate} ${c.plateTwoDigits}${c.plateLetter}${c.plateThreeDigits}')
+        .join(' ');
     searchKey = '${name.toLowerCase()} ${phone.replaceAll(' ', '')} $carsStr'.toLowerCase();
   }
 
-  int get totalDebt => cars.fold(0, (sum, c) => sum + c.services.fold(0, (s, srv) => s + srv.remainingDebt));
+  int get totalDebt =>
+      cars.fold(0, (sum, c) => sum + c.services.fold(0, (s, srv) => s + srv.remainingDebt));
 
   Map<String, dynamic> toMap() => {
         'id': id,
@@ -296,22 +296,122 @@ class Customer {
       };
 
   factory Customer.fromMap(Map<String, dynamic> map) => Customer(
-        id: map['id'] ?? '',
+        id: (map['id'] as String?)?.isNotEmpty == true
+            ? map['id']
+            : DateTime.now().microsecondsSinceEpoch.toString(),
         name: map['name'] ?? '',
         phone: map['phone'] ?? '',
         cars: (map['cars'] as List? ?? []).map((c) => Car.fromMap(c)).toList(),
       );
 }
 
-// ======================== بدنه برنامه و تم گرافیکی ========================
-class AutoElectricApp extends StatelessWidget {
+// ======================== App + Theme ========================
+class AutoElectricApp extends StatefulWidget {
   const AutoElectricApp({super.key});
+  @override
+  State<AutoElectricApp> createState() => _AutoElectricAppState();
+}
+
+class _AutoElectricAppState extends State<AutoElectricApp> {
+  bool _isDark = true;
+  bool _loaded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadTheme();
+  }
+
+  Future<void> _loadTheme() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      setState(() {
+        _isDark = prefs.getBool('theme_dark') ?? true;
+        _loaded = true;
+      });
+    } catch (_) {
+      setState(() => _loaded = true);
+    }
+  }
+
+  Future<void> _toggleTheme() async {
+    setState(() => _isDark = !_isDark);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('theme_dark', _isDark);
+    } catch (_) {}
+  }
+
+  ThemeData _darkTheme() {
+    return ThemeData(
+      useMaterial3: true,
+      brightness: Brightness.dark,
+      scaffoldBackgroundColor: const Color(0xFF0A0F1D),
+      colorScheme: const ColorScheme.dark(
+        primary: Color(0xFF38BDF8),
+        onPrimary: Colors.white,
+        secondary: Colors.amberAccent,
+        surface: Color(0xFF131D31),
+        onSurface: Colors.white,
+        onSurfaceVariant: Color(0xFFB0B8C5),
+        surfaceContainerHighest: Color(0xFF0F172A),
+        outline: Color(0xFF3A4557),
+      ),
+      appBarTheme: const AppBarTheme(
+        backgroundColor: Color(0xFF0F172A),
+        foregroundColor: Colors.white,
+        elevation: 0,
+      ),
+      cardTheme: const CardThemeData(color: Color(0xFF131D31), elevation: 2),
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: const Color(0xFF131D31),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
+      ),
+    );
+  }
+
+  ThemeData _lightTheme() {
+    return ThemeData(
+      useMaterial3: true,
+      brightness: Brightness.light,
+      scaffoldBackgroundColor: const Color(0xFFF3F6FA),
+      colorScheme: const ColorScheme.light(
+        primary: Color(0xFF0284C7),
+        onPrimary: Colors.white,
+        secondary: Color(0xFFF59E0B),
+        surface: Colors.white,
+        onSurface: Color(0xFF141821),
+        onSurfaceVariant: Color(0xFF5A6478),
+        surfaceContainerHighest: Color(0xFFEAF0F7),
+        outline: Color(0xFFD0D7E0),
+      ),
+      appBarTheme: const AppBarTheme(
+        backgroundColor: Colors.white,
+        foregroundColor: Color(0xFF141821),
+        elevation: 0,
+      ),
+      cardTheme: const CardThemeData(color: Colors.white, elevation: 1),
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: Colors.white,
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
+    if (!_loaded) {
+      return MaterialApp(
+        debugShowCheckedModeBanner: false,
+        home: const Scaffold(body: Center(child: CircularProgressIndicator())),
+      );
+    }
     return MaterialApp(
       title: 'کلینیک برق خودرو مهندس',
       debugShowCheckedModeBanner: false,
+      theme: _isDark ? _darkTheme() : _lightTheme(),
       locale: const Locale('fa', 'IR'),
       supportedLocales: const [Locale('fa', 'IR')],
       localizationsDelegates: const [
@@ -319,30 +419,16 @@ class AutoElectricApp extends StatelessWidget {
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
       ],
-      theme: ThemeData(
-        useMaterial3: true,
-        brightness: Brightness.dark,
-        scaffoldBackgroundColor: const Color(0xFF0A0F1D),
-        primaryColor: const Color(0xFF0284C7),
-        cardColor: const Color(0xFF131D31),
-        colorScheme: const ColorScheme.dark(
-          primary: Color(0xFF38BDF8),
-          secondary: Colors.amberAccent,
-          surface: Color(0xFF131D31),
-        ),
-        cardTheme: const CardThemeData(
-          color: Color(0xFF131D31),
-          elevation: 2,
-        ),
-      ),
-      home: const MainNavigationScreen(),
+      home: MainNavigationScreen(isDark: _isDark, onToggleTheme: _toggleTheme),
     );
   }
 }
 
+// ======================== ناوبری اصلی ========================
 class MainNavigationScreen extends StatefulWidget {
-  const MainNavigationScreen({super.key});
-
+  final bool isDark;
+  final VoidCallback onToggleTheme;
+  const MainNavigationScreen({super.key, required this.isDark, required this.onToggleTheme});
   @override
   State<MainNavigationScreen> createState() => _MainNavigationScreenState();
 }
@@ -359,29 +445,54 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   }
 
   Future<void> _loadData() async {
-    final prefs = await SharedPreferences.getInstance();
-    final String? raw = prefs.getString('customers_data_v9');
-    if (raw != null && raw.isNotEmpty) {
-      try {
-        final parsed = await compute(_decodeCustomersIsolate, raw);
-        setState(() {
-          customers = parsed;
-          _isLoading = false;
-        });
-        return;
-      } catch (e) {
-        debugPrint('Error loading: $e');
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final String? raw = prefs.getString('customers_data_v9');
+      if (raw != null && raw.isNotEmpty) {
+        try {
+          final parsed = await compute(_decodeCustomersIsolate, raw);
+          if (!mounted) return;
+          setState(() {
+            customers = parsed;
+            _isLoading = false;
+          });
+          return;
+        } catch (e) {
+          debugPrint('Error decoding: $e');
+          if (mounted) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('خطا در بازیابی داده‌های ذخیره‌شده. لطفاً از پشتیبان بازیابی کنید.'),
+                  backgroundColor: Colors.redAccent,
+                  duration: Duration(seconds: 6),
+                ),
+              );
+            });
+          }
+        }
       }
+    } catch (e) {
+      debugPrint('Error loading: $e');
     }
-    setState(() => _isLoading = false);
+    if (mounted) setState(() => _isLoading = false);
   }
 
   Future<void> _saveData() async {
-    final prefs = await SharedPreferences.getInstance();
-    final rawList = customers.map((c) => c.toMap()).toList();
-    final encoded = await compute(_encodeCustomersIsolate, rawList);
-    await prefs.setString('customers_data_v9', encoded);
-    setState(() {});
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final rawList = customers.map((c) => c.toMap()).toList();
+      final encoded = await compute(_encodeCustomersIsolate, rawList);
+      await prefs.setString('customers_data_v9', encoded);
+      if (mounted) setState(() {});
+    } catch (e) {
+      debugPrint('Save error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('خطا در ذخیره‌سازی: $e'), backgroundColor: Colors.redAccent),
+        );
+      }
+    }
   }
 
   @override
@@ -394,7 +505,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
             children: [
               CircularProgressIndicator(color: Colors.cyanAccent),
               SizedBox(height: 14),
-              Text('در حال بارگذاری سریع پرونده‌ها...', style: TextStyle(color: Colors.white70)),
+              Text('در حال بارگذاری پرونده‌ها...'),
             ],
           ),
         ),
@@ -402,7 +513,12 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     }
 
     final screens = [
-      HomeScreen(customers: customers, onDataChanged: _saveData),
+      HomeScreen(
+        customers: customers,
+        onDataChanged: _saveData,
+        isDark: widget.isDark,
+        onToggleTheme: widget.onToggleTheme,
+      ),
       DebtorsScreen(customers: customers),
       DailyReportScreen(customers: customers),
     ];
@@ -410,20 +526,23 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     return Scaffold(
       body: IndexedStack(index: _currentIndex, children: screens),
       bottomNavigationBar: Container(
-        decoration: const BoxDecoration(
-          border: Border(top: BorderSide(color: Colors.white12, width: 0.8)),
+        decoration: BoxDecoration(
+          border: Border(
+            top: BorderSide(
+                color: Theme.of(context).colorScheme.outline.withOpacity(0.3), width: 0.8),
+          ),
         ),
         child: BottomNavigationBar(
           currentIndex: _currentIndex,
-          onTap: (index) => setState(() => _currentIndex = index),
-          backgroundColor: const Color(0xFF0F172A),
-          selectedItemColor: Colors.cyanAccent,
-          unselectedItemColor: Colors.grey,
+          onTap: (i) => setState(() => _currentIndex = i),
+          backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+          selectedItemColor: Theme.of(context).colorScheme.primary,
+          unselectedItemColor: Theme.of(context).colorScheme.onSurfaceVariant,
           type: BottomNavigationBarType.fixed,
           items: const [
             BottomNavigationBarItem(icon: Icon(Icons.engineering), label: 'میز کار مشتریان'),
-            BottomNavigationBarItem(icon: Icon(Icons.account_balance_wallet), label: 'حساب دفتری (نسیه)'),
-            BottomNavigationBarItem(icon: Icon(Icons.query_stats), label: 'دخل و گزارش کارگاه'),
+            BottomNavigationBarItem(icon: Icon(Icons.account_balance_wallet), label: 'حساب دفتری'),
+            BottomNavigationBarItem(icon: Icon(Icons.query_stats), label: 'دخل و گزارش'),
           ],
         ),
       ),
@@ -431,12 +550,19 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   }
 }
 
-// ======================== صفحه اصلی میز کار مشتریان ========================
+// ======================== صفحه اصلی ========================
 class HomeScreen extends StatefulWidget {
   final List<Customer> customers;
   final VoidCallback onDataChanged;
-
-  const HomeScreen({super.key, required this.customers, required this.onDataChanged});
+  final bool isDark;
+  final VoidCallback onToggleTheme;
+  const HomeScreen({
+    super.key,
+    required this.customers,
+    required this.onDataChanged,
+    required this.isDark,
+    required this.onToggleTheme,
+  });
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -448,6 +574,10 @@ class _HomeScreenState extends State<HomeScreen> {
   Timer? _debounce;
   List<Customer> _filteredList = [];
 
+  final Map<String, ExpansionTileController> _tileControllers = {};
+  ExpansionTileController _controllerFor(String id) =>
+      _tileControllers.putIfAbsent(id, () => ExpansionTileController());
+
   @override
   void initState() {
     super.initState();
@@ -457,7 +587,9 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void didUpdateWidget(covariant HomeScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
-    _applyFilter(searchQuery);
+    if (oldWidget.customers != widget.customers) {
+      _applyFilter(searchQuery);
+    }
   }
 
   @override
@@ -467,11 +599,9 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
-  void _onSearchChanged(String query) {
+  void _onSearchChanged(String q) {
     if (_debounce?.isActive ?? false) _debounce!.cancel();
-    _debounce = Timer(const Duration(milliseconds: 150), () {
-      _applyFilter(query);
-    });
+    _debounce = Timer(const Duration(milliseconds: 150), () => _applyFilter(q));
   }
 
   void _applyFilter(String q) {
@@ -486,9 +616,23 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
+  Future<void> _navigateToCustomer(Customer customer) async {
+    final query = customer.phone.isNotEmpty ? customer.phone : customer.name;
+    _searchCtrl.text = query;
+    _applyFilter(query);
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await Future.delayed(const Duration(milliseconds: 250));
+      if (!mounted) return;
+      try {
+        _controllerFor(customer.id).expand();
+      } catch (_) {}
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
-    final int totalCars = widget.customers.fold(0, (sum, c) => sum + c.cars.length);
+    final cs = Theme.of(context).colorScheme;
+    final int totalCars = widget.customers.fold(0, (s, c) => s + c.cars.length);
 
     return Scaffold(
       appBar: AppBar(
@@ -497,25 +641,29 @@ class _HomeScreenState extends State<HomeScreen> {
           children: [
             Icon(Icons.bolt, color: Colors.amberAccent, size: 26),
             SizedBox(width: 6),
-            Text('کلینیک برق خودرو مهندس', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+            Text('کلینیک برق خودرو مهندس',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17)),
           ],
         ),
         centerTitle: true,
-        backgroundColor: const Color(0xFF0F172A),
         actions: [
           IconButton(
+            icon: Icon(widget.isDark ? Icons.light_mode : Icons.dark_mode,
+                color: Colors.amberAccent),
+            tooltip: widget.isDark ? 'تم روشن' : 'تم تاریک',
+            onPressed: widget.onToggleTheme,
+          ),
+          IconButton(
             icon: const Icon(Icons.campaign, color: Colors.amberAccent, size: 26),
-            tooltip: 'پیامک گروهی و خروجی',
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (ctx) => BulkSmsScreen(customers: widget.customers)),
-              );
-            },
+            tooltip: 'پیامک گروهی',
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => BulkSmsScreen(customers: widget.customers)),
+            ),
           ),
           IconButton(
             icon: const Icon(Icons.cloud_sync, color: Colors.cyanAccent),
-            tooltip: 'پشتیبان‌گیری در فایل و بازیابی',
+            tooltip: 'پشتیبان‌گیری',
             onPressed: () => _openSmartBackupDialog(context),
           ),
         ],
@@ -527,31 +675,29 @@ class _HomeScreenState extends State<HomeScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
             decoration: BoxDecoration(
               gradient: LinearGradient(
-                colors: [const Color(0xFF0284C7).withOpacity(0.35), const Color(0xFF131D31)],
+                colors: [cs.primary.withOpacity(0.25), cs.surface],
                 begin: Alignment.centerRight,
                 end: Alignment.centerLeft,
               ),
               borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: Colors.cyanAccent.withOpacity(0.25)),
+              border: Border.all(color: cs.primary.withOpacity(0.25)),
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Row(
-                  children: [
-                    const Icon(Icons.groups, color: Colors.cyanAccent, size: 22),
-                    const SizedBox(width: 8),
-                    Text('مشتریان: ${widget.customers.length}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                  ],
-                ),
-                Container(height: 18, width: 1, color: Colors.white24),
-                Row(
-                  children: [
-                    const Icon(Icons.directions_car, color: Colors.amberAccent, size: 20),
-                    const SizedBox(width: 8),
-                    Text('خودروها: $totalCars', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                  ],
-                ),
+                Row(children: [
+                  const Icon(Icons.groups, color: Colors.cyanAccent, size: 22),
+                  const SizedBox(width: 8),
+                  Text('مشتریان: ${widget.customers.length}',
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                ]),
+                Container(height: 18, width: 1, color: cs.outline),
+                Row(children: [
+                  const Icon(Icons.directions_car, color: Colors.amberAccent, size: 20),
+                  const SizedBox(width: 8),
+                  Text('خودروها: $totalCars',
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                ]),
                 ElevatedButton.icon(
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.amber[800],
@@ -559,14 +705,14 @@ class _HomeScreenState extends State<HomeScreen> {
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                   ),
                   icon: const Icon(Icons.sms, size: 14, color: Colors.white),
-                  label: const Text('پیامک', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white)),
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (ctx) => BulkSmsScreen(customers: widget.customers)),
-                    );
-                  },
-                )
+                  label: const Text('پیامک',
+                      style:
+                          TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white)),
+                  onPressed: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => BulkSmsScreen(customers: widget.customers)),
+                  ),
+                ),
               ],
             ),
           ),
@@ -577,62 +723,70 @@ class _HomeScreenState extends State<HomeScreen> {
               onChanged: _onSearchChanged,
               decoration: InputDecoration(
                 hintText: 'جستجوی آنی (نام، شماره، مدل خودرو یا پلاک)...',
-                hintStyle: const TextStyle(color: Colors.white54, fontSize: 13),
+                hintStyle: TextStyle(color: cs.onSurfaceVariant, fontSize: 13),
                 prefixIcon: const Icon(Icons.search, color: Colors.cyanAccent),
                 suffixIcon: searchQuery.isNotEmpty
                     ? IconButton(
-                        icon: const Icon(Icons.clear, color: Colors.white70),
+                        icon: const Icon(Icons.clear),
                         onPressed: () {
                           _searchCtrl.clear();
                           _applyFilter('');
                         },
                       )
                     : null,
-                filled: true,
-                fillColor: const Color(0xFF131D31),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
               ),
             ),
           ),
           Expanded(
             child: _filteredList.isEmpty
-                ? const Center(child: Text('پرونده‌ای یافت نشد.', style: TextStyle(color: Colors.grey)))
+                ? Center(
+                    child: Text('پرونده‌ای یافت نشد.',
+                        style: TextStyle(color: cs.onSurfaceVariant)),
+                  )
                 : ListView.builder(
                     itemCount: _filteredList.length,
-                    itemBuilder: (context, i) => _buildCustomerCard(_filteredList[i]),
+                    itemBuilder: (_, i) => _buildCustomerCard(_filteredList[i]),
                   ),
           ),
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
-        backgroundColor: const Color(0xFF0284C7),
+        backgroundColor: cs.primary,
         icon: const Icon(Icons.person_add_alt_1, color: Colors.white),
-        label: const Text('مشتری جدید', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        label: const Text('مشتری جدید',
+            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
         onPressed: () => _openCustomerDialog(),
       ),
     );
   }
 
   Widget _buildCustomerCard(Customer customer) {
+    final cs = Theme.of(context).colorScheme;
     final bool hasDebt = customer.totalDebt > 0;
     return Card(
       key: ValueKey(customer.id),
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       child: ExpansionTile(
         key: PageStorageKey('cust_${customer.id}'),
+        controller: _controllerFor(customer.id),
         leading: CircleAvatar(
-          backgroundColor: hasDebt ? Colors.redAccent.withOpacity(0.85) : const Color(0xFF0284C7),
+          backgroundColor: hasDebt ? Colors.redAccent.withOpacity(0.85) : cs.primary,
           child: Icon(hasDebt ? Icons.priority_high : Icons.person, color: Colors.white),
         ),
         title: Row(
           children: [
-            Expanded(child: Text(customer.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15))),
+            Expanded(
+              child: Text(customer.name,
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+            ),
             if (hasDebt)
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 margin: const EdgeInsets.only(left: 4),
-                decoration: BoxDecoration(color: Colors.red[900], borderRadius: BorderRadius.circular(6)),
-                child: Text('بدهکار: ${formatToman(customer.totalDebt)}', style: const TextStyle(fontSize: 10, color: Colors.white)),
+                decoration:
+                    BoxDecoration(color: Colors.red[900], borderRadius: BorderRadius.circular(6)),
+                child: Text('بدهکار: ${formatToman(customer.totalDebt)}',
+                    style: const TextStyle(fontSize: 10, color: Colors.white)),
               ),
             IconButton(
               icon: const Icon(Icons.edit, size: 20, color: Colors.cyanAccent),
@@ -644,16 +798,21 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ],
         ),
-        subtitle: Text('📞 ${customer.phone.isNotEmpty ? customer.phone : 'بدون شماره'}  |  🚗 ${customer.cars.length} خودرو',
-            style: const TextStyle(fontSize: 12, color: Colors.white60)),
+        subtitle: Text(
+          '📞 ${customer.phone.isNotEmpty ? customer.phone : 'بدون شماره'}  |  🚗 ${customer.cars.length} خودرو',
+          style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
+        ),
         children: [
           ...customer.cars.map((car) => _buildCarRow(customer, car)),
           Padding(
             padding: const EdgeInsets.all(8.0),
             child: ElevatedButton.icon(
-              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0F172A), side: const BorderSide(color: Colors.cyanAccent)),
+              style: ElevatedButton.styleFrom(
+                  backgroundColor: cs.surfaceContainerHighest,
+                  side: BorderSide(color: cs.primary)),
               icon: const Icon(Icons.add_circle_outline, color: Colors.cyanAccent, size: 18),
-              label: const Text('ثبت خودروی دیگر برای این مشتری', style: TextStyle(color: Colors.cyanAccent, fontSize: 12)),
+              label: const Text('ثبت خودروی دیگر',
+                  style: TextStyle(color: Colors.cyanAccent, fontSize: 12)),
               onPressed: () => _openCarDialog(customer: customer),
             ),
           ),
@@ -663,13 +822,14 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildCarRow(Customer customer, Car car) {
+    final cs = Theme.of(context).colorScheme;
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
-        color: const Color(0xFF0A0F1D),
+        color: cs.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.white12),
+        border: Border.all(color: cs.outline.withOpacity(0.4)),
       ),
       child: Column(
         children: [
@@ -677,25 +837,22 @@ class _HomeScreenState extends State<HomeScreen> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Expanded(
-                child: Row(
-                  children: [
-                    Flexible(
-                      child: Text(
-                        car.model,
-                        style: const TextStyle(color: Colors.amberAccent, fontWeight: FontWeight.bold, fontSize: 14),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.edit, size: 16, color: Colors.white60),
-                      onPressed: () => _openCarDialog(customer: customer, carToEdit: car),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.delete_forever, size: 16, color: Colors.redAccent),
-                      onPressed: () => _confirmDeleteCar(customer, car),
-                    ),
-                  ],
-                ),
+                child: Row(children: [
+                  Flexible(
+                    child: Text(car.model,
+                        style: const TextStyle(
+                            color: Colors.amberAccent, fontWeight: FontWeight.bold, fontSize: 14),
+                        overflow: TextOverflow.ellipsis),
+                  ),
+                  IconButton(
+                    icon: Icon(Icons.edit, size: 16, color: cs.onSurfaceVariant),
+                    onPressed: () => _openCarDialog(customer: customer, carToEdit: car),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.delete_forever, size: 16, color: Colors.redAccent),
+                    onPressed: () => _confirmDeleteCar(customer, car),
+                  ),
+                ]),
               ),
               RealisticPlateBadge(car: car),
             ],
@@ -704,16 +861,18 @@ class _HomeScreenState extends State<HomeScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text('${car.services.length} فاکتور ثبت شده', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+              Text('${car.services.length} فاکتور ثبت شده',
+                  style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant)),
               ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0284C7)),
+                style: ElevatedButton.styleFrom(backgroundColor: cs.primary),
                 icon: const Icon(Icons.receipt_long, size: 15, color: Colors.white),
-                label: const Text('فاکتورها و سوابق', style: TextStyle(color: Colors.white, fontSize: 11)),
+                label: const Text('فاکتورها و سوابق',
+                    style: TextStyle(color: Colors.white, fontSize: 11)),
                 onPressed: () async {
                   await Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (c) => CarServicesScreen(
+                      builder: (_) => CarServicesScreen(
                         customer: customer,
                         car: car,
                         onChanged: () {
@@ -737,19 +896,25 @@ class _HomeScreenState extends State<HomeScreen> {
   void _openCustomerDialog({Customer? customer}) {
     showDialog(
       context: context,
-      builder: (ctx) => _CustomerEditDialog(
+      builder: (_) => _CustomerEditDialog(
         customer: customer,
         existingCustomers: widget.customers,
+        onGoToExisting: (c) {
+          Navigator.pop(context);
+          _navigateToCustomer(c);
+        },
         onSave: (name, phone) {
           setState(() {
             if (customer == null) {
-              final newCust = Customer(
-                id: DateTime.now().millisecondsSinceEpoch.toString(),
-                name: name,
-                phone: phone,
-                cars: [],
+              widget.customers.insert(
+                0,
+                Customer(
+                  id: DateTime.now().microsecondsSinceEpoch.toString(),
+                  name: name,
+                  phone: phone,
+                  cars: [],
+                ),
               );
-              widget.customers.insert(0, newCust);
             } else {
               customer.name = name;
               customer.phone = phone;
@@ -768,7 +933,8 @@ class _HomeScreenState extends State<HomeScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('⚠️ حذف پرونده مشتری', style: TextStyle(color: Colors.redAccent)),
-        content: Text('آیا از حذف پرونده "${customer.name}" و تمام سوابق فاکتورهای آن اطمینان دارید؟'),
+        content:
+            Text('آیا از حذف پرونده "${customer.name}" و تمام سوابق فاکتورهای آن اطمینان دارید؟'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('انصراف')),
           ElevatedButton(
@@ -789,24 +955,26 @@ class _HomeScreenState extends State<HomeScreen> {
   void _openCarDialog({required Customer customer, Car? carToEdit}) {
     showDialog(
       context: context,
-      builder: (ctx) => _CarEditDialog(
+      builder: (_) => _CarEditDialog(
         carToEdit: carToEdit,
         customer: customer,
         existingCustomers: widget.customers,
+        onGoToExisting: (owner) {
+          Navigator.pop(context);
+          _navigateToCustomer(owner);
+        },
         onSave: (model, two, letter, three, prov) {
           setState(() {
             if (carToEdit == null) {
-              customer.cars.add(
-                Car(
-                  id: DateTime.now().millisecondsSinceEpoch.toString(),
-                  model: model,
-                  plateTwoDigits: two,
-                  plateLetter: letter,
-                  plateThreeDigits: three,
-                  plateProvinceCode: prov,
-                  services: [],
-                ),
-              );
+              customer.cars.add(Car(
+                id: DateTime.now().microsecondsSinceEpoch.toString(),
+                model: model,
+                plateTwoDigits: two,
+                plateLetter: letter,
+                plateThreeDigits: three,
+                plateProvinceCode: prov,
+                services: [],
+              ));
             } else {
               carToEdit.model = model;
               carToEdit.plateTwoDigits = two;
@@ -851,40 +1019,48 @@ class _HomeScreenState extends State<HomeScreen> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Row(
-          children: [
-            Icon(Icons.save_as, color: Colors.cyanAccent),
-            SizedBox(width: 8),
-            Text('پشتیبان‌گیری و بازیابی فایل'),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('پشتیبان‌گیری در این نسخه به شکل یک فایل اختصاصی JSON ذخیره و به اشتراک گذاشته می‌شود.',
-                style: TextStyle(fontSize: 12, color: Colors.white70)),
-            const SizedBox(height: 16),
-            ElevatedButton.icon(
-              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0284C7), minimumSize: const Size.fromHeight(45)),
-              icon: const Icon(Icons.share, color: Colors.white),
-              label: const Text('اشتراک و ذخیره فایل پشتیبان (.json)', style: TextStyle(color: Colors.white, fontSize: 13)),
-              onPressed: () async {
-                Navigator.pop(ctx);
-                _exportBackupAsFile(context);
-              },
-            ),
-            const SizedBox(height: 10),
-            ElevatedButton.icon(
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.amber[800], minimumSize: const Size.fromHeight(45)),
-              icon: const Icon(Icons.file_upload, color: Colors.white),
-              label: const Text('بازیابی اطلاعات از متن یا فایل قبلی', style: TextStyle(color: Colors.white, fontSize: 13)),
-              onPressed: () {
-                Navigator.pop(ctx);
-                _openRestoreDialog(context);
-              },
-            ),
-          ],
+        title: const Row(children: [
+          Icon(Icons.save_as, color: Colors.cyanAccent),
+          SizedBox(width: 8),
+          Text('پشتیبان‌گیری و بازیابی'),
+        ]),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                  'پشتیبان‌گیری به شکل یک فایل اختصاصی JSON ذخیره و به اشتراک گذاشته می‌شود.',
+                  style: TextStyle(fontSize: 12)),
+              const SizedBox(height: 16),
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Theme.of(context).colorScheme.primary,
+                  minimumSize: const Size.fromHeight(45),
+                ),
+                icon: const Icon(Icons.share, color: Colors.white),
+                label: const Text('اشتراک فایل پشتیبان (.json)',
+                    style: TextStyle(color: Colors.white, fontSize: 13)),
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  _exportBackupAsFile(context);
+                },
+              ),
+              const SizedBox(height: 10),
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.amber[800],
+                    minimumSize: const Size.fromHeight(45)),
+                icon: const Icon(Icons.file_upload, color: Colors.white),
+                label: const Text('بازیابی از متن پشتیبان',
+                    style: TextStyle(color: Colors.white, fontSize: 13)),
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  _openRestoreDialog(context);
+                },
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -894,14 +1070,23 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       final rawList = widget.customers.map((c) => c.toMap()).toList();
       final jsonString = await compute(_encodeCustomersIsolate, rawList);
-      final bytes = Uint8List.fromList(utf8.encode(jsonString));
-      final shamsiDate = JalaliHelper.nowShamsi().replaceAll('/', '_');
-      final fileName = 'پشتیبان_برق_خودرو_$shamsiDate.json';
 
-      await Printing.sharePdf(bytes: bytes, filename: fileName);
+      final dir = await getTemporaryDirectory();
+      final shamsiDate = JalaliHelper.nowShamsi().replaceAll('/', '_');
+      final file = File('${dir.path}/پشتیبان_برق_خودرو_$shamsiDate.json');
+      await file.writeAsString(jsonString, encoding: utf8);
+
+      if (!context.mounted) return;
+      await Share.shareXFiles(
+        [XFile(file.path, mimeType: 'application/json')],
+        subject: 'پشتیبان برق خودرو',
+        text: 'فایل پشتیبان تاریخ $shamsiDate',
+      );
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('خطا در ایجاد فایل پشتیبان: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('خطا در ایجاد فایل پشتیبان: $e')),
+        );
       }
     }
   }
@@ -912,20 +1097,21 @@ class _HomeScreenState extends State<HomeScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('بازیابی فایل پشتیبان'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text('محتوای فایل پشتیبان JSON را در کادر زیر قرار دهید:', style: TextStyle(fontSize: 12, color: Colors.white70)),
-            const SizedBox(height: 8),
-            TextField(
-              controller: codeCtrl,
-              maxLines: 5,
-              decoration: const InputDecoration(
-                hintText: 'کدهای متنی فایل پشتیبان را Paste کنید...',
-                border: OutlineInputBorder(),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('محتوای فایل پشتیبان JSON را در کادر زیر قرار دهید:',
+                  style: TextStyle(fontSize: 12)),
+              const SizedBox(height: 8),
+              TextField(
+                controller: codeCtrl,
+                maxLines: 5,
+                decoration:
+                    const InputDecoration(hintText: 'کدهای فایل پشتیبان را Paste کنید...'),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('انصراف')),
@@ -933,6 +1119,7 @@ class _HomeScreenState extends State<HomeScreen> {
             onPressed: () async {
               try {
                 final text = codeCtrl.text.trim();
+                if (text.isEmpty) return;
                 final parsed = await compute(_decodeCustomersIsolate, text);
                 setState(() {
                   widget.customers.clear();
@@ -943,12 +1130,16 @@ class _HomeScreenState extends State<HomeScreen> {
                 if (context.mounted) {
                   Navigator.pop(ctx);
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('${parsed.length} پرونده با موفقیت بازیابی شد!')),
+                    SnackBar(content: Text('${parsed.length} پرونده بازیابی شد!')),
                   );
                 }
               } catch (_) {
                 if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('فایل یا کد پشتیبان نامعتبر است!')));
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                        content: Text('کد پشتیبان نامعتبر است!'),
+                        backgroundColor: Colors.redAccent),
+                  );
                 }
               }
             },
@@ -956,14 +1147,13 @@ class _HomeScreenState extends State<HomeScreen> {
           )
         ],
       ),
-    );
+    ).whenComplete(() => codeCtrl.dispose());
   }
 }
 
-// ======================== ویجت نمایش گرافیکی پلاک واقعی ========================
+// ======================== ویجت پلاک ========================
 class RealisticPlateBadge extends StatelessWidget {
   final Car car;
-
   const RealisticPlateBadge({super.key, required this.car});
 
   @override
@@ -993,22 +1183,39 @@ class RealisticPlateBadge extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Text('🇮🇷', style: TextStyle(fontSize: 6)),
-                  Text('IR', style: TextStyle(color: Colors.white, fontSize: 5, fontWeight: FontWeight.bold)),
+                  Text('IR',
+                      style: TextStyle(
+                          color: Colors.white, fontSize: 5, fontWeight: FontWeight.bold)),
                 ],
               ),
             ),
             const SizedBox(width: 4),
-            Text(car.plateTwoDigits, style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 13)),
+            Text(car.plateTwoDigits,
+                style: const TextStyle(
+                    color: Colors.black, fontWeight: FontWeight.bold, fontSize: 13)),
             const SizedBox(width: 3),
-            Text(car.plateLetter, style: const TextStyle(color: Colors.blueAccent, fontWeight: FontWeight.bold, fontSize: 14)),
+            Text(car.plateLetter,
+                style: const TextStyle(
+                    color: Colors.black, fontWeight: FontWeight.bold, fontSize: 14)),
             const SizedBox(width: 3),
-            Text(car.plateThreeDigits, style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 13)),
-            Container(height: 20, width: 1, color: Colors.black38, margin: const EdgeInsets.symmetric(horizontal: 4)),
+            Text(car.plateThreeDigits,
+                style: const TextStyle(
+                    color: Colors.black, fontWeight: FontWeight.bold, fontSize: 13)),
+            Container(
+                height: 20,
+                width: 1,
+                color: Colors.black38,
+                margin: const EdgeInsets.symmetric(horizontal: 4)),
             Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 const Text('ایران', style: TextStyle(color: Colors.black, fontSize: 7, height: 1)),
-                Text(car.plateProvinceCode, style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 10, height: 1)),
+                Text(car.plateProvinceCode,
+                    style: const TextStyle(
+                        color: Colors.black,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 10,
+                        height: 1)),
               ],
             ),
           ],
@@ -1018,17 +1225,19 @@ class RealisticPlateBadge extends StatelessWidget {
   }
 }
 
-// ======================== دیالوگ ثبت خودرو ========================
+// ======================== دیالوگ خودرو ========================
 class _CarEditDialog extends StatefulWidget {
   final Car? carToEdit;
   final Customer customer;
   final List<Customer> existingCustomers;
+  final void Function(Customer owner) onGoToExisting;
   final Function(String model, String two, String letter, String three, String prov) onSave;
 
   const _CarEditDialog({
     this.carToEdit,
     required this.customer,
     required this.existingCustomers,
+    required this.onGoToExisting,
     required this.onSave,
   });
 
@@ -1042,6 +1251,7 @@ class _CarEditDialogState extends State<_CarEditDialog> {
   late final TextEditingController threeCtrl;
   late final TextEditingController provCtrl;
   late String selectedLetter;
+  late List<String> _availableLetters;
 
   final FocusNode twoFocus = FocusNode();
   final FocusNode threeFocus = FocusNode();
@@ -1052,13 +1262,16 @@ class _CarEditDialogState extends State<_CarEditDialog> {
     super.initState();
     modelCtrl = TextEditingController(text: widget.carToEdit?.model ?? '');
     twoCtrl = TextEditingController(text: widget.carToEdit?.plateTwoDigits ?? '');
-    selectedLetter = widget.carToEdit?.plateLetter ?? 'ب';
     threeCtrl = TextEditingController(text: widget.carToEdit?.plateThreeDigits ?? '');
     provCtrl = TextEditingController(text: widget.carToEdit?.plateProvinceCode ?? '');
 
-    if (!kIranPlateLetters.contains(selectedLetter)) {
-      selectedLetter = 'ب';
+    final oldLetter = normalizePlateLetter(widget.carToEdit?.plateLetter ?? '');
+    _availableLetters = [...kIranPlateLetters];
+    if (oldLetter.isNotEmpty && !_availableLetters.contains(oldLetter)) {
+      _availableLetters.add(oldLetter);
     }
+    selectedLetter =
+        _availableLetters.contains(oldLetter) ? oldLetter : _availableLetters.first;
   }
 
   @override
@@ -1073,7 +1286,11 @@ class _CarEditDialogState extends State<_CarEditDialog> {
     super.dispose();
   }
 
-  void _handleSave() {
+  List<TextInputFormatter> get _digitFormatters => [
+        FilteringTextInputFormatter.allow(RegExp(r'[0-9۰-۹٠-٩]')),
+      ];
+
+  void _trySave({required bool force}) {
     final model = modelCtrl.text.trim();
     final two = NumberHelper.cleanNumbers(twoCtrl.text);
     final letter = selectedLetter.trim();
@@ -1081,21 +1298,17 @@ class _CarEditDialogState extends State<_CarEditDialog> {
     final prov = NumberHelper.cleanNumbers(provCtrl.text);
 
     if (model.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('لطفاً مدل خودرو را وارد کنید.')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('لطفاً مدل خودرو را وارد کنید.')));
       return;
     }
 
-    if (two.isNotEmpty && three.isNotEmpty) {
+    if (!force && two.isNotEmpty && three.isNotEmpty) {
       for (final cust in widget.existingCustomers) {
         for (final car in cust.cars) {
           if (widget.carToEdit != null && car.id == widget.carToEdit!.id) continue;
           if (car.matchesPlate(two, letter, three, prov)) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text('این پلاک قبلاً برای پرونده «${cust.name}» ثبت شده است!'),
-                backgroundColor: Colors.redAccent,
-              ),
-            );
+            _showDuplicatePlateDialog(cust, car);
             return;
           }
         }
@@ -1106,8 +1319,54 @@ class _CarEditDialogState extends State<_CarEditDialog> {
     Navigator.pop(context);
   }
 
+  void _showDuplicatePlateDialog(Customer owner, Car existingCar) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Row(children: [
+          Icon(Icons.warning_amber, color: Colors.amber),
+          SizedBox(width: 8),
+          Text('پلاک تکراری'),
+        ]),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+                'این پلاک قبلاً برای خودروی «${existingCar.model}» در پرونده «${owner.name}» ثبت شده است.'),
+            const SizedBox(height: 10),
+            const Text('می‌خواهید به پرونده‌ی مالک بروید یا پلاک را به‌هرحال ثبت کنید؟',
+                style: TextStyle(fontSize: 12)),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('انصراف')),
+          ElevatedButton.icon(
+            icon: const Icon(Icons.folder_open, size: 16),
+            label: const Text('برو به پرونده مالک'),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.teal[700]),
+            onPressed: () {
+              Navigator.pop(ctx);
+              widget.onGoToExisting(owner);
+            },
+          ),
+          ElevatedButton.icon(
+            icon: const Icon(Icons.save, size: 16),
+            label: const Text('ثبت به‌هرحال'),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.orange[800]),
+            onPressed: () {
+              Navigator.pop(ctx);
+              _trySave(force: true);
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
     return AlertDialog(
       title: Text(widget.carToEdit == null ? 'افزودن خودرو' : 'ویرایش خودرو'),
       content: SingleChildScrollView(
@@ -1117,13 +1376,10 @@ class _CarEditDialogState extends State<_CarEditDialog> {
           children: [
             TextField(
               controller: modelCtrl,
-              decoration: const InputDecoration(
-                labelText: 'مدل خودرو (مثلاً: پژو ۲۰۶ سفید)',
-                border: OutlineInputBorder(),
-              ),
+              decoration: const InputDecoration(labelText: 'مدل خودرو (مثلاً: پژو ۲۰۶ سفید)'),
             ),
             const SizedBox(height: 8),
-            const Text('انتخاب سریع خودرو:', style: TextStyle(fontSize: 11, color: Colors.white70)),
+            Text('انتخاب سریع خودرو:', style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant)),
             const SizedBox(height: 4),
             SingleChildScrollView(
               scrollDirection: Axis.horizontal,
@@ -1140,7 +1396,9 @@ class _CarEditDialogState extends State<_CarEditDialog> {
               ),
             ),
             const SizedBox(height: 14),
-            const Text('شماره پلاک ملی خودرو:', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.cyanAccent)),
+            const Text('شماره پلاک ملی خودرو:',
+                style: TextStyle(
+                    fontSize: 12, fontWeight: FontWeight.bold, color: Colors.cyanAccent)),
             const SizedBox(height: 6),
             Directionality(
               textDirection: TextDirection.ltr,
@@ -1157,12 +1415,18 @@ class _CarEditDialogState extends State<_CarEditDialog> {
                     Container(
                       width: 22,
                       height: 48,
-                      decoration: BoxDecoration(color: const Color(0xFF003399), borderRadius: BorderRadius.circular(4)),
+                      decoration: BoxDecoration(
+                          color: const Color(0xFF003399),
+                          borderRadius: BorderRadius.circular(4)),
                       child: const Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           Text('🇮🇷', style: TextStyle(fontSize: 8)),
-                          Text('I.R.', style: TextStyle(color: Colors.white, fontSize: 6, fontWeight: FontWeight.bold)),
+                          Text('I.R.',
+                              style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 6,
+                                  fontWeight: FontWeight.bold)),
                           Text('IRAN', style: TextStyle(color: Colors.white, fontSize: 5)),
                         ],
                       ),
@@ -1176,9 +1440,11 @@ class _CarEditDialogState extends State<_CarEditDialog> {
                         keyboardType: TextInputType.number,
                         textAlign: TextAlign.center,
                         maxLength: 2,
-                        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                        style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 17),
-                        decoration: const InputDecoration(counterText: '', hintText: '۲۲', border: InputBorder.none),
+                        inputFormatters: _digitFormatters,
+                        style: const TextStyle(
+                            color: Colors.black, fontWeight: FontWeight.bold, fontSize: 17),
+                        decoration: const InputDecoration(
+                            counterText: '', hintText: '۲۲', border: InputBorder.none),
                         onChanged: (val) {
                           if (val.length == 2) FocusScope.of(context).requestFocus(threeFocus);
                         },
@@ -1186,11 +1452,17 @@ class _CarEditDialogState extends State<_CarEditDialog> {
                     ),
                     DropdownButton<String>(
                       value: selectedLetter,
-                      dropdownColor: const Color(0xFF1E293B),
+                      dropdownColor: cs.surfaceContainerHighest,
                       underline: const SizedBox(),
-                      style: const TextStyle(color: Colors.blueAccent, fontWeight: FontWeight.bold, fontSize: 17),
-                      items: kIranPlateLetters.map((l) => DropdownMenuItem(value: l, child: Text(l))).toList(),
-                      onChanged: (v) => setState(() => selectedLetter = v ?? 'ب'),
+                      style: const TextStyle(
+                          color: Colors.blueAccent,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 17),
+                      items: _availableLetters
+                          .map((l) => DropdownMenuItem(value: l, child: Text(l)))
+                          .toList(),
+                      onChanged: (v) =>
+                          setState(() => selectedLetter = v ?? _availableLetters.first),
                     ),
                     SizedBox(
                       width: 58,
@@ -1200,19 +1472,30 @@ class _CarEditDialogState extends State<_CarEditDialog> {
                         keyboardType: TextInputType.number,
                         textAlign: TextAlign.center,
                         maxLength: 3,
-                        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                        style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 17),
-                        decoration: const InputDecoration(counterText: '', hintText: '۳۶۵', border: InputBorder.none),
+                        inputFormatters: _digitFormatters,
+                        style: const TextStyle(
+                            color: Colors.black, fontWeight: FontWeight.bold, fontSize: 17),
+                        decoration: const InputDecoration(
+                            counterText: '', hintText: '۳۶۵', border: InputBorder.none),
                         onChanged: (val) {
                           if (val.length == 3) FocusScope.of(context).requestFocus(provFocus);
                         },
                       ),
                     ),
-                    Container(height: 38, width: 1.5, color: Colors.black45, margin: const EdgeInsets.symmetric(horizontal: 4)),
+                    Container(
+                        height: 38,
+                        width: 1.5,
+                        color: Colors.black45,
+                        margin: const EdgeInsets.symmetric(horizontal: 4)),
                     Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Text('ایران', style: TextStyle(color: Colors.black, fontSize: 10, fontWeight: FontWeight.bold, height: 1)),
+                        const Text('ایران',
+                            style: TextStyle(
+                                color: Colors.black,
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                                height: 1)),
                         SizedBox(
                           width: 38,
                           height: 32,
@@ -1222,9 +1505,16 @@ class _CarEditDialogState extends State<_CarEditDialog> {
                             keyboardType: TextInputType.number,
                             textAlign: TextAlign.center,
                             maxLength: 2,
-                            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                            style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 15),
-                            decoration: const InputDecoration(counterText: '', hintText: '۶۸', border: InputBorder.none, isDense: true),
+                            inputFormatters: _digitFormatters,
+                            style: const TextStyle(
+                                color: Colors.black,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 15),
+                            decoration: const InputDecoration(
+                                counterText: '',
+                                hintText: '۶۸',
+                                border: InputBorder.none,
+                                isDense: true),
                           ),
                         ),
                       ],
@@ -1238,19 +1528,25 @@ class _CarEditDialogState extends State<_CarEditDialog> {
       ),
       actions: [
         TextButton(onPressed: () => Navigator.pop(context), child: const Text('انصراف')),
-        ElevatedButton(onPressed: _handleSave, child: const Text('ذخیره')),
+        ElevatedButton(onPressed: () => _trySave(force: false), child: const Text('ذخیره')),
       ],
     );
   }
 }
 
-// ======================== دیالوگ ثبت و ویرایش مشتری ========================
+// ======================== دیالوگ مشتری ========================
 class _CustomerEditDialog extends StatefulWidget {
   final Customer? customer;
   final List<Customer> existingCustomers;
+  final void Function(Customer existing) onGoToExisting;
   final Function(String name, String phone) onSave;
 
-  const _CustomerEditDialog({this.customer, required this.existingCustomers, required this.onSave});
+  const _CustomerEditDialog({
+    this.customer,
+    required this.existingCustomers,
+    required this.onGoToExisting,
+    required this.onSave,
+  });
 
   @override
   State<_CustomerEditDialog> createState() => _CustomerEditDialogState();
@@ -1274,27 +1570,23 @@ class _CustomerEditDialogState extends State<_CustomerEditDialog> {
     super.dispose();
   }
 
-  void _handleSave() {
+  void _trySave({required bool force}) {
     final name = nameCtrl.text.trim();
     final rawPhone = phoneCtrl.text.trim();
     final cleanPhone = NumberHelper.cleanNumbers(rawPhone);
     final normPhone = NumberHelper.normalizePhone(rawPhone);
 
     if (name.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('لطفاً نام مشتری را وارد کنید.')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('لطفاً نام مشتری را وارد کنید.')));
       return;
     }
 
-    if (normPhone.isNotEmpty) {
+    if (!force && normPhone.isNotEmpty) {
       for (final c in widget.existingCustomers) {
         if (widget.customer != null && c.id == widget.customer!.id) continue;
         if (NumberHelper.normalizePhone(c.phone) == normPhone) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('این شماره قبلاً برای پرونده «${c.name}» ثبت شده است!'),
-              backgroundColor: Colors.redAccent,
-            ),
-          );
+          _showDuplicatePhoneDialog(c);
           return;
         }
       }
@@ -1304,6 +1596,54 @@ class _CustomerEditDialogState extends State<_CustomerEditDialog> {
     Navigator.pop(context);
   }
 
+  void _showDuplicatePhoneDialog(Customer existing) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Row(children: [
+          Icon(Icons.warning_amber, color: Colors.amber),
+          SizedBox(width: 8),
+          Text('شماره تکراری'),
+        ]),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('این شماره قبلاً برای پرونده «${existing.name}» ثبت شده است.'),
+            const SizedBox(height: 8),
+            if (existing.cars.isNotEmpty)
+              Text('خودروها: ${existing.cars.map((c) => c.model).join('، ')}',
+                  style: const TextStyle(fontSize: 12)),
+            const SizedBox(height: 10),
+            const Text('می‌خواهید به پرونده‌ی موجود بروید یا این شماره را به‌هرحال ذخیره کنید؟',
+                style: TextStyle(fontSize: 12)),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('انصراف')),
+          ElevatedButton.icon(
+            icon: const Icon(Icons.folder_open, size: 16),
+            label: const Text('برو به پرونده'),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.teal[700]),
+            onPressed: () {
+              Navigator.pop(ctx);
+              widget.onGoToExisting(existing);
+            },
+          ),
+          ElevatedButton.icon(
+            icon: const Icon(Icons.save, size: 16),
+            label: const Text('ذخیره به‌هرحال'),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.orange[800]),
+            onPressed: () {
+              Navigator.pop(ctx);
+              _trySave(force: true);
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
@@ -1311,26 +1651,36 @@ class _CustomerEditDialogState extends State<_CustomerEditDialog> {
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: 'نام و نام خانوادگی')),
+          TextField(
+              controller: nameCtrl,
+              decoration: const InputDecoration(labelText: 'نام و نام خانوادگی')),
           const SizedBox(height: 8),
-          TextField(controller: phoneCtrl, keyboardType: TextInputType.phone, decoration: const InputDecoration(labelText: 'شماره همراه')),
+          TextField(
+            controller: phoneCtrl,
+            keyboardType: TextInputType.phone,
+            decoration: const InputDecoration(labelText: 'شماره همراه'),
+          ),
         ],
       ),
       actions: [
         TextButton(onPressed: () => Navigator.pop(context), child: const Text('انصراف')),
-        ElevatedButton(onPressed: _handleSave, child: const Text('ذخیره')),
+        ElevatedButton(onPressed: () => _trySave(force: false), child: const Text('ذخیره')),
       ],
     );
   }
 }
 
-// ======================== صفحه سوابق فاکتورهای خودرو ========================
+// ======================== صفحه سوابق خودرو ========================
 class CarServicesScreen extends StatefulWidget {
   final Customer customer;
   final Car car;
   final VoidCallback onChanged;
-
-  const CarServicesScreen({super.key, required this.customer, required this.car, required this.onChanged});
+  const CarServicesScreen({
+    super.key,
+    required this.customer,
+    required this.car,
+    required this.onChanged,
+  });
 
   @override
   State<CarServicesScreen> createState() => _CarServicesScreenState();
@@ -1339,17 +1689,19 @@ class CarServicesScreen extends StatefulWidget {
 class _CarServicesScreenState extends State<CarServicesScreen> {
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(
         title: Text('${widget.car.model} (${widget.customer.name})'),
-        backgroundColor: const Color(0xFF0F172A),
       ),
       body: widget.car.services.isEmpty
-          ? const Center(child: Text('هنوز فاکتوری برای این خودرو ثبت نشده است.', style: TextStyle(color: Colors.grey)))
+          ? Center(
+              child: Text('هنوز فاکتوری برای این خودرو ثبت نشده است.',
+                  style: TextStyle(color: cs.onSurfaceVariant)))
           : ListView.builder(
               padding: const EdgeInsets.all(12),
               itemCount: widget.car.services.length,
-              itemBuilder: (context, i) {
+              itemBuilder: (_, i) {
                 final s = widget.car.services[i];
                 return Card(
                   margin: const EdgeInsets.only(bottom: 12),
@@ -1364,31 +1716,42 @@ class _CarServicesScreenState extends State<CarServicesScreen> {
                             Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text('📅 تاریخ: ${s.date}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.amberAccent)),
+                                Text('📅 تاریخ: ${s.date}',
+                                    style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 13,
+                                        color: Colors.amberAccent)),
                                 if (s.km.isNotEmpty)
-                                  Text('🚗 کارکرد: ${s.km} km', style: const TextStyle(fontSize: 12, color: Colors.white70)),
+                                  Text('🚗 کارکرد: ${s.km} km',
+                                      style:
+                                          TextStyle(fontSize: 12, color: cs.onSurfaceVariant)),
                               ],
                             ),
-                            Row(
-                              children: [
-                                IconButton(
-                                  icon: const Icon(Icons.edit, size: 18, color: Colors.cyanAccent),
-                                  onPressed: () => _openServiceDialog(serviceToEdit: s),
-                                ),
-                                IconButton(
-                                  icon: const Icon(Icons.delete_outline, size: 18, color: Colors.redAccent),
-                                  onPressed: () => _confirmDeleteService(s),
-                                ),
-                              ],
-                            ),
+                            Row(children: [
+                              IconButton(
+                                icon: const Icon(Icons.edit,
+                                    size: 18, color: Colors.cyanAccent),
+                                onPressed: () => _openServiceDialog(serviceToEdit: s),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.delete_outline,
+                                    size: 18, color: Colors.redAccent),
+                                onPressed: () => _confirmDeleteService(s),
+                              ),
+                            ]),
                           ],
                         ),
                         if (s.warrantyNote.isNotEmpty) ...[
                           const SizedBox(height: 4),
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                            decoration: BoxDecoration(color: Colors.blueGrey.withOpacity(0.3), borderRadius: BorderRadius.circular(6)),
-                            child: Text('🛡 گارانتی: ${s.warrantyNote}', style: const TextStyle(fontSize: 11, color: Colors.cyanAccent)),
+                            padding:
+                                const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(
+                                color: cs.surfaceContainerHighest,
+                                borderRadius: BorderRadius.circular(6)),
+                            child: Text('🛡 گارانتی: ${s.warrantyNote}',
+                                style: const TextStyle(
+                                    fontSize: 11, color: Colors.cyanAccent)),
                           ),
                         ],
                         const Divider(height: 16),
@@ -1396,68 +1759,96 @@ class _CarServicesScreenState extends State<CarServicesScreen> {
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
                                 Text('• ${l.title}', style: const TextStyle(fontSize: 12)),
-                                Text(formatToman(l.cost), style: const TextStyle(fontSize: 12, color: Colors.white70)),
+                                Text(formatToman(l.cost),
+                                    style: TextStyle(
+                                        fontSize: 12, color: cs.onSurfaceVariant)),
                               ],
                             )),
                         ...s.parts.map((p) => Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                Text('• قطعه: ${p.name}', style: const TextStyle(fontSize: 12, color: Colors.amberAccent)),
-                                Text(formatToman(p.price), style: const TextStyle(fontSize: 12, color: Colors.white70)),
+                                Text('• قطعه: ${p.name}',
+                                    style: const TextStyle(
+                                        fontSize: 12, color: Colors.amberAccent)),
+                                Text(formatToman(p.price),
+                                    style: TextStyle(
+                                        fontSize: 12, color: cs.onSurfaceVariant)),
                               ],
                             )),
                         const Divider(height: 16),
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            const Text('جمع کل نهایی:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                            Text(formatToman(s.grandTotal), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.greenAccent)),
+                            const Text('جمع کل نهایی:',
+                                style: TextStyle(
+                                    fontWeight: FontWeight.bold, fontSize: 13)),
+                            Text(formatToman(s.grandTotal),
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 14,
+                                    color: Colors.greenAccent)),
                           ],
                         ),
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Text('پرداخت شده (${s.paymentMethod}):', style: const TextStyle(fontSize: 12, color: Colors.white70)),
-                            Text(formatToman(s.paidAmount), style: const TextStyle(fontSize: 12, color: Colors.cyanAccent)),
+                            Text('پرداخت شده (${s.paymentMethod}):',
+                                style: TextStyle(
+                                    fontSize: 12, color: cs.onSurfaceVariant)),
+                            Text(formatToman(s.paidAmount),
+                                style: const TextStyle(
+                                    fontSize: 12, color: Colors.cyanAccent)),
                           ],
                         ),
                         if (s.remainingDebt > 0)
                           Container(
                             margin: const EdgeInsets.only(top: 6),
                             padding: const EdgeInsets.all(6),
-                            decoration: BoxDecoration(color: Colors.red[900]?.withOpacity(0.4), borderRadius: BorderRadius.circular(6)),
+                            decoration: BoxDecoration(
+                                color: Colors.red[900]?.withOpacity(0.35),
+                                borderRadius: BorderRadius.circular(6)),
                             child: Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                const Text('مانده بدهی (نسیه):', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 12)),
-                                Text(formatToman(s.remainingDebt), style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.redAccent, fontSize: 13)),
+                                const Text('مانده بدهی (نسیه):',
+                                    style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.white,
+                                        fontSize: 12)),
+                                Text(formatToman(s.remainingDebt),
+                                    style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.redAccent,
+                                        fontSize: 13)),
                               ],
                             ),
                           ),
                         const SizedBox(height: 10),
-                        Wrap(
-                          spacing: 8,
-                          children: [
-                            ElevatedButton.icon(
-                              style: ElevatedButton.styleFrom(backgroundColor: Colors.teal[800]),
-                              icon: const Icon(Icons.sms, size: 14, color: Colors.white),
-                              label: const Text('پیامک تحویل', style: TextStyle(color: Colors.white, fontSize: 11)),
-                              onPressed: () => _sendSmsNotification(s),
-                            ),
-                            ElevatedButton.icon(
-                              style: ElevatedButton.styleFrom(backgroundColor: Colors.purple[800]),
-                              icon: const Icon(Icons.receipt, size: 14, color: Colors.white),
-                              label: const Text('فیش حرارتی', style: TextStyle(color: Colors.white, fontSize: 11)),
-                              onPressed: () => _printPdfInvoice(s, isThermal: true),
-                            ),
-                            ElevatedButton.icon(
-                              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0284C7)),
-                              icon: const Icon(Icons.print, size: 14, color: Colors.white),
-                              label: const Text('فاکتور A4', style: TextStyle(color: Colors.white, fontSize: 11)),
-                              onPressed: () => _printPdfInvoice(s, isThermal: false),
-                            ),
-                          ],
-                        ),
+                        Wrap(spacing: 8, children: [
+                          ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.teal[800]),
+                            icon: const Icon(Icons.sms, size: 14, color: Colors.white),
+                            label: const Text('پیامک تحویل',
+                                style: TextStyle(color: Colors.white, fontSize: 11)),
+                            onPressed: () => _sendSmsNotification(s),
+                          ),
+                          ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.purple[800]),
+                            icon: const Icon(Icons.receipt, size: 14, color: Colors.white),
+                            label: const Text('فیش حرارتی',
+                                style: TextStyle(color: Colors.white, fontSize: 11)),
+                            onPressed: () => _printPdfInvoice(s, isThermal: true),
+                          ),
+                          ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(backgroundColor: cs.primary),
+                            icon: const Icon(Icons.print, size: 14, color: Colors.white),
+                            label: const Text('فاکتور A4',
+                                style: TextStyle(color: Colors.white, fontSize: 11)),
+                            onPressed: () => _printPdfInvoice(s, isThermal: false),
+                          ),
+                        ]),
                       ],
                     ),
                   ),
@@ -1465,9 +1856,10 @@ class _CarServicesScreenState extends State<CarServicesScreen> {
               },
             ),
       floatingActionButton: FloatingActionButton.extended(
-        backgroundColor: const Color(0xFF0284C7),
+        backgroundColor: cs.primary,
         icon: const Icon(Icons.note_add, color: Colors.white),
-        label: const Text('ثبت فاکتور جدید', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        label: const Text('ثبت فاکتور جدید',
+            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
         onPressed: () => _openServiceDialog(),
       ),
     );
@@ -1495,84 +1887,80 @@ class _CarServicesScreenState extends State<CarServicesScreen> {
     );
   }
 
+  Future<bool> _launchSms(String phone, String body) async {
+    final uri = Uri.parse('sms:$phone?body=${Uri.encodeComponent(body)}');
+    try {
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri);
+        return true;
+      }
+    } catch (_) {}
+    return false;
+  }
+
   Future<void> _sendSmsNotification(ServiceRecord s) async {
     final cleanPhone = NumberHelper.cleanNumbers(widget.customer.phone);
     if (cleanPhone.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('شماره همراه مشتری ثبت نشده است!')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('شماره همراه مشتری ثبت نشده است!')));
       return;
     }
 
-    final StringBuffer buffer = StringBuffer();
-    buffer.writeln('مشتری گرامی ${widget.customer.name}');
-    buffer.writeln('خودروی ${widget.car.model} (${widget.car.fullPlate}) آماده تحویل است.');
-    buffer.writeln('--------------------');
-
-    // لیست اجرت‌ها و خدمات انجام شده
+    final b = StringBuffer();
+    b.writeln('مشتری گرامی ${widget.customer.name}');
+    b.writeln('خودروی ${widget.car.model} (${widget.car.fullPlate}) آماده تحویل است.');
+    b.writeln('--------------------');
     if (s.labors.isNotEmpty) {
-      buffer.writeln('🔧 خدمات انجام شده:');
+      b.writeln('🔧 خدمات انجام شده:');
       for (final l in s.labors) {
-        buffer.writeln('• ${l.title}: ${formatToman(l.cost)}');
+        b.writeln('• ${l.title}: ${formatToman(l.cost)}');
       }
     }
-
-    // لیست قطعات خریداری و تعویض شده
     if (s.parts.isNotEmpty) {
-      if (s.labors.isNotEmpty) buffer.writeln('');
-      buffer.writeln('🔩 قطعات و لوازم:');
+      if (s.labors.isNotEmpty) b.writeln('');
+      b.writeln('🔩 قطعات و لوازم:');
       for (final p in s.parts) {
-        buffer.writeln('• ${p.name}: ${formatToman(p.price)}');
+        b.writeln('• ${p.name}: ${formatToman(p.price)}');
       }
     }
-
-    buffer.writeln('--------------------');
-    buffer.writeln('💰 جمع کل: ${formatToman(s.grandTotal)}');
-    
-    if (s.discount > 0) {
-      buffer.writeln('🎁 تخفیف: ${formatToman(s.discount)}');
-    }
-    
-    buffer.writeln('💳 پرداختی: ${formatToman(s.paidAmount)}');
-
+    b.writeln('--------------------');
+    b.writeln('💰 جمع کل: ${formatToman(s.grandTotal)}');
+    if (s.discount > 0) b.writeln('🎁 تخفیف: ${formatToman(s.discount)}');
+    b.writeln('💳 پرداختی: ${formatToman(s.paidAmount)}');
     if (s.remainingDebt > 0) {
-      buffer.writeln('⚠️ مانده حساب (بدهی): ${formatToman(s.remainingDebt)}');
+      b.writeln('⚠️ مانده حساب (بدهی): ${formatToman(s.remainingDebt)}');
     }
+    if (s.warrantyNote.isNotEmpty) b.writeln('🛡 گارانتی: ${s.warrantyNote}');
+    b.writeln('⚡ کلینیک برق خودرو مهندس');
 
-    if (s.warrantyNote.isNotEmpty) {
-      buffer.writeln('🛡 گارانتی: ${s.warrantyNote}');
+    final ok = await _launchSms(cleanPhone, b.toString());
+    if (!ok && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text('امکان باز کردن اپلیکیشن پیامک نیست.'),
+            backgroundColor: Colors.redAccent),
+      );
     }
-
-    buffer.writeln('⚡ کلینیک برق خودرو مهندس');
-
-    final msg = buffer.toString();
-    final encoded = Uri.encodeComponent(msg);
-    final uri = Uri.parse('sms:$cleanPhone?body=$encoded');
-    try {
-      if (await canLaunchUrl(uri)) await launchUrl(uri);
-    } catch (_) {}
   }
 
-  // ======================== تابع اصلاح‌شده چاپ فاکتور با فونت فارسی ========================
+  // ✅ فونت آفلاین از assets
   Future<void> _printPdfInvoice(ServiceRecord service, {required bool isThermal}) async {
     try {
-      // دانلود یا بارگذاری فونت استاندارد فارسی (وزیر متن)
-      final farsiFont = await PdfGoogleFonts.vazirmatnRegular();
-      final farsiFontBold = await PdfGoogleFonts.vazirmatnBold();
+      final regularData = await rootBundle.load('assets/fonts/Vazirmatn-Regular.ttf');
+      final boldData = await rootBundle.load('assets/fonts/Vazirmatn-Bold.ttf');
+      final farsiFont = pw.Font.ttf(regularData);
+      final farsiFontBold = pw.Font.ttf(boldData);
 
-      // ساخت قالب سند بر پایه فونت فارسی
       final pdf = pw.Document(
-        theme: pw.ThemeData.withFont(
-          base: farsiFont,
-          bold: farsiFontBold,
-        ),
+        theme: pw.ThemeData.withFont(base: farsiFont, bold: farsiFontBold),
       );
-
       final pageFormat = isThermal ? PdfPageFormat.roll80 : PdfPageFormat.a4;
 
       pdf.addPage(
         pw.Page(
           pageFormat: pageFormat,
           textDirection: pw.TextDirection.rtl,
-          build: (pw.Context context) {
+          build: (_) {
             return pw.Directionality(
               textDirection: pw.TextDirection.rtl,
               child: pw.Column(
@@ -1583,21 +1971,26 @@ class _CarServicesScreenState extends State<CarServicesScreen> {
                     child: pw.Text(
                       'کلینیک برق خودرو مهندس',
                       style: pw.TextStyle(
-                        fontSize: isThermal ? 13 : 18,
-                        fontWeight: pw.FontWeight.bold,
-                      ),
+                          fontSize: isThermal ? 13 : 18,
+                          fontWeight: pw.FontWeight.bold),
                     ),
                   ),
                   pw.Divider(),
-                  pw.Text('مشتری: ${widget.customer.name}  |  تلفن: ${widget.customer.phone}', style: pw.TextStyle(fontSize: isThermal ? 8 : 10)),
-                  pw.Text('خودرو: ${widget.car.model}  |  پلاک: ${widget.car.fullPlate}', style: pw.TextStyle(fontSize: isThermal ? 8 : 10)),
-                  pw.Text('تاریخ: ${service.date}', style: pw.TextStyle(fontSize: isThermal ? 8 : 10)),
+                  pw.Text(
+                      'مشتری: ${widget.customer.name}  |  تلفن: ${widget.customer.phone}',
+                      style: pw.TextStyle(fontSize: isThermal ? 8 : 10)),
+                  pw.Text('خودرو: ${widget.car.model}  |  پلاک: ${widget.car.fullPlate}',
+                      style: pw.TextStyle(fontSize: isThermal ? 8 : 10)),
+                  pw.Text('تاریخ: ${service.date}',
+                      style: pw.TextStyle(fontSize: isThermal ? 8 : 10)),
                   pw.Divider(),
                   ...service.labors.map((l) => pw.Row(
                         mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                         children: [
-                          pw.Text(l.title, style: pw.TextStyle(fontSize: isThermal ? 8 : 10)),
-                          pw.Text(formatToman(l.cost), style: pw.TextStyle(fontSize: isThermal ? 8 : 10)),
+                          pw.Text(l.title,
+                              style: pw.TextStyle(fontSize: isThermal ? 8 : 10)),
+                          pw.Text(formatToman(l.cost),
+                              style: pw.TextStyle(fontSize: isThermal ? 8 : 10)),
                         ],
                       )),
                   if (service.parts.isNotEmpty) ...[
@@ -1605,16 +1998,27 @@ class _CarServicesScreenState extends State<CarServicesScreen> {
                     ...service.parts.map((p) => pw.Row(
                           mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                           children: [
-                            pw.Text('قطعه: ${p.name}', style: pw.TextStyle(fontSize: isThermal ? 8 : 10)),
-                            pw.Text(formatToman(p.price), style: pw.TextStyle(fontSize: isThermal ? 8 : 10)),
+                            pw.Text('قطعه: ${p.name}',
+                                style: pw.TextStyle(fontSize: isThermal ? 8 : 10)),
+                            pw.Text(formatToman(p.price),
+                                style: pw.TextStyle(fontSize: isThermal ? 8 : 10)),
                           ],
                         )),
                   ],
                   pw.Divider(),
-                  pw.Row(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, children: [
-                    pw.Text('مبلغ نهایی:', style: pw.TextStyle(fontSize: isThermal ? 9 : 11, fontWeight: pw.FontWeight.bold)),
-                    pw.Text(formatToman(service.grandTotal), style: pw.TextStyle(fontSize: isThermal ? 9 : 11, fontWeight: pw.FontWeight.bold)),
-                  ]),
+                  pw.Row(
+                    mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                    children: [
+                      pw.Text('مبلغ نهایی:',
+                          style: pw.TextStyle(
+                              fontSize: isThermal ? 9 : 11,
+                              fontWeight: pw.FontWeight.bold)),
+                      pw.Text(formatToman(service.grandTotal),
+                          style: pw.TextStyle(
+                              fontSize: isThermal ? 9 : 11,
+                              fontWeight: pw.FontWeight.bold)),
+                    ],
+                  ),
                 ],
               ),
             );
@@ -1623,18 +2027,21 @@ class _CarServicesScreenState extends State<CarServicesScreen> {
       );
 
       await Printing.layoutPdf(
-        onLayout: (PdfPageFormat format) async => pdf.save(),
+        onLayout: (_) async => pdf.save(),
         name: 'فاکتور_${widget.customer.name}_${service.date}',
       );
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('خطا در صدور PDF: $e')));
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('خطا در صدور PDF: $e')));
+      }
     }
   }
 
   void _openServiceDialog({ServiceRecord? serviceToEdit}) {
     showDialog(
       context: context,
-      builder: (ctx) => _ServiceEditDialog(
+      builder: (_) => _ServiceEditDialog(
         serviceToEdit: serviceToEdit,
         onSave: (record) {
           setState(() {
@@ -1662,9 +2069,7 @@ class _CarServicesScreenState extends State<CarServicesScreen> {
 class _ServiceEditDialog extends StatefulWidget {
   final ServiceRecord? serviceToEdit;
   final Function(ServiceRecord) onSave;
-
   const _ServiceEditDialog({this.serviceToEdit, required this.onSave});
-
   @override
   State<_ServiceEditDialog> createState() => _ServiceEditDialogState();
 }
@@ -1686,11 +2091,16 @@ class _ServiceEditDialogState extends State<_ServiceEditDialog> {
     dateCtrl = TextEditingController(text: s?.date ?? JalaliHelper.nowShamsi());
     kmCtrl = TextEditingController(text: s?.km ?? '');
     warrantyCtrl = TextEditingController(text: s?.warrantyNote ?? '');
-    discountCtrl = TextEditingController(text: s != null && s.discount > 0 ? s.discount.toString() : '');
+    discountCtrl =
+        TextEditingController(text: s != null && s.discount > 0 ? s.discount.toString() : '');
     paidCtrl = TextEditingController(text: s != null ? s.paidAmount.toString() : '');
     paymentMethod = s?.paymentMethod ?? 'کارت‌خوان (POS)';
-    laborsList = s != null ? s.labors.map((l) => LaborItem(title: l.title, cost: l.cost)).toList() : [];
-    partsList = s != null ? s.parts.map((p) => PartItem(name: p.name, price: p.price)).toList() : [];
+    laborsList = s != null
+        ? s.labors.map((l) => LaborItem(title: l.title, cost: l.cost)).toList()
+        : [];
+    partsList = s != null
+        ? s.parts.map((p) => PartItem(name: p.name, price: p.price)).toList()
+        : [];
   }
 
   @override
@@ -1705,7 +2115,9 @@ class _ServiceEditDialogState extends State<_ServiceEditDialog> {
 
   @override
   Widget build(BuildContext context) {
-    int subTotal = laborsList.fold(0, (sum, i) => sum + i.cost) + partsList.fold(0, (sum, i) => sum + i.price);
+    final cs = Theme.of(context).colorScheme;
+    int subTotal = laborsList.fold(0, (s, i) => s + i.cost) +
+        partsList.fold(0, (s, i) => s + i.price);
     int discount = NumberHelper.safeParseInt(discountCtrl.text);
     int grandTotal = (subTotal - discount) > 0 ? (subTotal - discount) : 0;
 
@@ -1718,16 +2130,27 @@ class _ServiceEditDialogState extends State<_ServiceEditDialog> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                children: [
-                  Expanded(child: TextField(controller: dateCtrl, decoration: const InputDecoration(labelText: 'تاریخ فاکتور'))),
-                  const SizedBox(width: 8),
-                  Expanded(child: TextField(controller: kmCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'کیلومتر ماشین'))),
-                ],
-              ),
-              TextField(controller: warrantyCtrl, decoration: const InputDecoration(labelText: 'یادداشت/گارانتی قطعه')),
+              Row(children: [
+                Expanded(
+                    child: TextField(
+                        controller: dateCtrl,
+                        decoration: const InputDecoration(labelText: 'تاریخ فاکتور'))),
+                const SizedBox(width: 8),
+                Expanded(
+                    child: TextField(
+                        controller: kmCtrl,
+                        keyboardType: TextInputType.number,
+                        inputFormatters: [
+                          FilteringTextInputFormatter.allow(RegExp(r'[0-9۰-۹٠-٩]'))
+                        ],
+                        decoration: const InputDecoration(labelText: 'کیلومتر ماشین'))),
+              ]),
+              TextField(
+                  controller: warrantyCtrl,
+                  decoration: const InputDecoration(labelText: 'یادداشت/گارانتی قطعه')),
               const SizedBox(height: 10),
-              const Text('خدمات پرکاربرد برق خودرو (کلیک برای افزودن):', style: TextStyle(fontSize: 11, color: Colors.cyanAccent)),
+              const Text('خدمات پرکاربرد برق خودرو (کلیک برای افزودن):',
+                  style: TextStyle(fontSize: 11, color: Colors.cyanAccent)),
               const SizedBox(height: 4),
               SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
@@ -1736,8 +2159,8 @@ class _ServiceEditDialogState extends State<_ServiceEditDialog> {
                     return Padding(
                       padding: const EdgeInsets.only(left: 6.0),
                       child: ActionChip(
-                        backgroundColor: const Color(0xFF0F172A),
-                        side: const BorderSide(color: Colors.white24),
+                        backgroundColor: cs.surfaceContainerHighest,
+                        side: BorderSide(color: cs.outline),
                         label: Text('${ql['title']}', style: const TextStyle(fontSize: 11)),
                         onPressed: () {
                           setState(() {
@@ -1752,98 +2175,126 @@ class _ServiceEditDialogState extends State<_ServiceEditDialog> {
               const SizedBox(height: 10),
               Container(
                 padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(color: const Color(0xFF0A0F1D), borderRadius: BorderRadius.circular(10)),
-                child: Column(
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text('🔧 لیست خدمات:', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.cyanAccent, fontSize: 13)),
-                        ElevatedButton.icon(
-                          style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0284C7)),
-                          icon: const Icon(Icons.add, size: 14),
-                          label: const Text('دستی', style: TextStyle(fontSize: 10)),
-                          onPressed: () => _openAddItemDialog(isLabor: true),
-                        ),
-                      ],
-                    ),
-                    ...laborsList.asMap().entries.map((e) => Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text('• ${e.value.title}: ${formatToman(e.value.cost)}', style: const TextStyle(fontSize: 12)),
-                            IconButton(
-                              icon: const Icon(Icons.close, size: 16, color: Colors.redAccent),
-                              onPressed: () => setState(() => laborsList.removeAt(e.key)),
-                            )
-                          ],
-                        )),
-                  ],
-                ),
+                decoration: BoxDecoration(
+                    color: cs.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(10)),
+                child: Column(children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('🔧 لیست خدمات:',
+                          style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: Colors.cyanAccent,
+                              fontSize: 13)),
+                      ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(backgroundColor: cs.primary),
+                        icon: const Icon(Icons.add, size: 14),
+                        label: const Text('دستی', style: TextStyle(fontSize: 10)),
+                        onPressed: () => _openAddItemDialog(isLabor: true),
+                      ),
+                    ],
+                  ),
+                  ...laborsList.asMap().entries.map((e) => Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text('• ${e.value.title}: ${formatToman(e.value.cost)}',
+                              style: const TextStyle(fontSize: 12)),
+                          IconButton(
+                            icon:
+                                const Icon(Icons.close, size: 16, color: Colors.redAccent),
+                            onPressed: () => setState(() => laborsList.removeAt(e.key)),
+                          )
+                        ],
+                      )),
+                ]),
               ),
               const SizedBox(height: 8),
               Container(
                 padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(color: const Color(0xFF0A0F1D), borderRadius: BorderRadius.circular(10)),
-                child: Column(
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text('🔩 قطعات و لوازم:', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.amberAccent, fontSize: 13)),
-                        ElevatedButton.icon(
-                          style: ElevatedButton.styleFrom(backgroundColor: Colors.amber[800]),
-                          icon: const Icon(Icons.add, size: 14),
-                          label: const Text('افزودن قطعه', style: TextStyle(fontSize: 10)),
-                          onPressed: () => _openAddItemDialog(isLabor: false),
-                        ),
-                      ],
-                    ),
-                    ...partsList.asMap().entries.map((e) => Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text('• ${e.value.name}: ${formatToman(e.value.price)}', style: const TextStyle(fontSize: 12)),
-                            IconButton(
-                              icon: const Icon(Icons.close, size: 16, color: Colors.redAccent),
-                              onPressed: () => setState(() => partsList.removeAt(e.key)),
-                            )
-                          ],
-                        )),
-                  ],
-                ),
+                decoration: BoxDecoration(
+                    color: cs.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(10)),
+                child: Column(children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('🔩 قطعات و لوازم:',
+                          style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: Colors.amberAccent,
+                              fontSize: 13)),
+                      ElevatedButton.icon(
+                        style:
+                            ElevatedButton.styleFrom(backgroundColor: Colors.amber[800]),
+                        icon: const Icon(Icons.add, size: 14),
+                        label: const Text('افزودن قطعه', style: TextStyle(fontSize: 10)),
+                        onPressed: () => _openAddItemDialog(isLabor: false),
+                      ),
+                    ],
+                  ),
+                  ...partsList.asMap().entries.map((e) => Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text('• ${e.value.name}: ${formatToman(e.value.price)}',
+                              style: const TextStyle(fontSize: 12)),
+                          IconButton(
+                            icon:
+                                const Icon(Icons.close, size: 16, color: Colors.redAccent),
+                            onPressed: () => setState(() => partsList.removeAt(e.key)),
+                          )
+                        ],
+                      )),
+                ]),
               ),
               const SizedBox(height: 10),
               TextField(
                 controller: discountCtrl,
                 keyboardType: TextInputType.number,
+                inputFormatters: [
+                  FilteringTextInputFormatter.allow(RegExp(r'[0-9۰-۹٠-٩]'))
+                ],
                 decoration: const InputDecoration(labelText: 'تخفیف (تومان)'),
                 onChanged: (_) => setState(() {}),
               ),
-              Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: paidCtrl,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(labelText: 'مبلغ دریافتی'),
-                    ),
+              Row(children: [
+                Expanded(
+                  child: TextField(
+                    controller: paidCtrl,
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [
+                      FilteringTextInputFormatter.allow(RegExp(r'[0-9۰-۹٠-٩]'))
+                    ],
+                    decoration: const InputDecoration(labelText: 'مبلغ دریافتی'),
                   ),
-                  const SizedBox(width: 8),
-                  DropdownButton<String>(
-                    value: paymentMethod,
-                    items: ['کارت‌خوان (POS)', 'نقد', 'کارت‌به‌کارت'].map((v) => DropdownMenuItem(value: v, child: Text(v, style: const TextStyle(fontSize: 12)))).toList(),
-                    onChanged: (v) => setState(() => paymentMethod = v!),
-                  ),
-                ],
-              ),
+                ),
+                const SizedBox(width: 8),
+                DropdownButton<String>(
+                  value: paymentMethod,
+                  dropdownColor: cs.surfaceContainerHighest,
+                  items: ['کارت‌خوان (POS)', 'نقد', 'کارت‌به‌کارت']
+                      .map((v) => DropdownMenuItem(
+                          value: v, child: Text(v, style: const TextStyle(fontSize: 12))))
+                      .toList(),
+                  onChanged: (v) => setState(() => paymentMethod = v!),
+                ),
+              ]),
               const SizedBox(height: 10),
               Container(
                 padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(color: Colors.green.withOpacity(0.15), borderRadius: BorderRadius.circular(10)),
+                decoration: BoxDecoration(
+                    color: Colors.green.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(10)),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    const Text('جمع نهایی قابل پرداخت:', style: TextStyle(fontWeight: FontWeight.bold)),
-                    Text(formatToman(grandTotal), style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.greenAccent, fontSize: 14)),
+                    const Text('جمع نهایی قابل پرداخت:',
+                        style: TextStyle(fontWeight: FontWeight.bold)),
+                    Text(formatToman(grandTotal),
+                        style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: Colors.greenAccent,
+                            fontSize: 14)),
                   ],
                 ),
               )
@@ -1856,13 +2307,16 @@ class _ServiceEditDialogState extends State<_ServiceEditDialog> {
         ElevatedButton(
           onPressed: () {
             if (laborsList.isEmpty && partsList.isEmpty) {
-              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('حداقل یک خدمت یا قطعه ثبت کنید.')));
+              ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('حداقل یک خدمت یا قطعه ثبت کنید.')));
               return;
             }
             final enteredPaid = NumberHelper.safeParseInt(paidCtrl.text);
             final record = ServiceRecord(
-              id: widget.serviceToEdit?.id ?? DateTime.now().millisecondsSinceEpoch.toString(),
-              date: dateCtrl.text.isNotEmpty ? dateCtrl.text.trim() : JalaliHelper.nowShamsi(),
+              id: widget.serviceToEdit?.id ??
+                  DateTime.now().microsecondsSinceEpoch.toString(),
+              date:
+                  dateCtrl.text.isNotEmpty ? dateCtrl.text.trim() : JalaliHelper.nowShamsi(),
               km: kmCtrl.text.trim(),
               warrantyNote: warrantyCtrl.text.trim(),
               paymentMethod: paymentMethod,
@@ -1890,8 +2344,17 @@ class _ServiceEditDialogState extends State<_ServiceEditDialog> {
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            TextField(controller: titleCtrl, decoration: InputDecoration(labelText: isLabor ? 'شرح کار' : 'نام قطعه')),
-            TextField(controller: costCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'مبلغ (تومان)')),
+            TextField(
+                controller: titleCtrl,
+                decoration:
+                    InputDecoration(labelText: isLabor ? 'شرح کار' : 'نام قطعه')),
+            TextField(
+                controller: costCtrl,
+                keyboardType: TextInputType.number,
+                inputFormatters: [
+                  FilteringTextInputFormatter.allow(RegExp(r'[0-9۰-۹٠-٩]'))
+                ],
+                decoration: const InputDecoration(labelText: 'مبلغ (تومان)')),
           ],
         ),
         actions: [
@@ -1914,30 +2377,33 @@ class _ServiceEditDialogState extends State<_ServiceEditDialog> {
           )
         ],
       ),
-    );
+    ).whenComplete(() {
+      titleCtrl.dispose();
+      costCtrl.dispose();
+    });
   }
 }
 
-// ======================== تب حساب دفتری و لیست بدهکاران ========================
+// ======================== حساب دفتری ========================
 class DebtorsScreen extends StatelessWidget {
   final List<Customer> customers;
-
   const DebtorsScreen({super.key, required this.customers});
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
     final debtors = customers.where((c) => c.totalDebt > 0).toList();
     final int totalShopDebt = debtors.fold(0, (sum, c) => sum + c.totalDebt);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('📋 حساب دفتری و لیست نسیه‌ها'), backgroundColor: const Color(0xFF0F172A)),
+      appBar: AppBar(title: const Text('📋 حساب دفتری و لیست نسیه‌ها')),
       body: Column(
         children: [
           Container(
             margin: const EdgeInsets.all(12),
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: Colors.red[900]?.withOpacity(0.3),
+              color: Colors.red[900]?.withOpacity(0.25),
               borderRadius: BorderRadius.circular(16),
               border: Border.all(color: Colors.redAccent),
             ),
@@ -1947,32 +2413,48 @@ class DebtorsScreen extends StatelessWidget {
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('کل طلب شما از مشتریان:', style: TextStyle(color: Colors.white70, fontSize: 13)),
+                    Text('کل طلب شما از مشتریان:',
+                        style: TextStyle(color: cs.onSurfaceVariant, fontSize: 13)),
                     const SizedBox(height: 4),
-                    Text(formatToman(totalShopDebt), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.redAccent)),
+                    Text(formatToman(totalShopDebt),
+                        style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 18,
+                            color: Colors.redAccent)),
                   ],
                 ),
-                Text('${debtors.length} نفر بدهکار', style: const TextStyle(color: Colors.amberAccent, fontWeight: FontWeight.bold)),
+                Text('${debtors.length} نفر بدهکار',
+                    style: const TextStyle(
+                        color: Colors.amberAccent, fontWeight: FontWeight.bold)),
               ],
             ),
           ),
           Expanded(
             child: debtors.isEmpty
-                ? const Center(child: Text('هیچ بدهی و نسیه ثبت‌شده‌ای ندارید! 🎉', style: TextStyle(color: Colors.grey)))
+                ? Center(
+                    child: Text('هیچ بدهی و نسیه ثبت‌شده‌ای ندارید! 🎉',
+                        style: TextStyle(color: cs.onSurfaceVariant)))
                 : ListView.builder(
                     itemCount: debtors.length,
-                    itemBuilder: (context, i) {
+                    itemBuilder: (_, i) {
                       final c = debtors[i];
                       return Card(
                         margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                         child: ListTile(
-                          leading: const CircleAvatar(backgroundColor: Colors.redAccent, child: Icon(Icons.money_off, color: Colors.white)),
-                          title: Text(c.name, style: const TextStyle(fontWeight: FontWeight.bold)),
-                          subtitle: Text('📞 ${c.phone}\nمانده بدهی: ${formatToman(c.totalDebt)}', style: const TextStyle(color: Colors.redAccent)),
+                          leading: const CircleAvatar(
+                              backgroundColor: Colors.redAccent,
+                              child: Icon(Icons.money_off, color: Colors.white)),
+                          title: Text(c.name,
+                              style: const TextStyle(fontWeight: FontWeight.bold)),
+                          subtitle: Text(
+                              '📞 ${c.phone}\nمانده بدهی: ${formatToman(c.totalDebt)}',
+                              style: const TextStyle(color: Colors.redAccent)),
                           trailing: ElevatedButton.icon(
-                            style: ElevatedButton.styleFrom(backgroundColor: Colors.teal[800]),
+                            style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.teal[800]),
                             icon: const Icon(Icons.sms, size: 16, color: Colors.white),
-                            label: const Text('یادآوری', style: TextStyle(color: Colors.white, fontSize: 12)),
+                            label: const Text('یادآوری',
+                                style: TextStyle(color: Colors.white, fontSize: 12)),
                             onPressed: () => _sendDebtReminderSms(c, context),
                           ),
                         ),
@@ -1988,27 +2470,34 @@ class DebtorsScreen extends StatelessWidget {
   Future<void> _sendDebtReminderSms(Customer c, BuildContext context) async {
     final cleanPhone = NumberHelper.cleanNumbers(c.phone);
     if (cleanPhone.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('شماره همراه مشتری ثبت نشده است!')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('شماره همراه مشتری ثبت نشده است!')));
       return;
     }
     final msg = 'مشتری گرامی ${c.name}\n'
         'با سلام، احتراما مانده حساب شما در کلینیک برق خودرو مهندس مبلغ ${formatToman(c.totalDebt)} می‌باشد.\n'
         'با تشکر - برق خودرو مهندس';
-
-    final encoded = Uri.encodeComponent(msg);
-    final uri = Uri.parse('sms:$cleanPhone?body=$encoded');
+    final uri = Uri.parse('sms:$cleanPhone?body=${Uri.encodeComponent(msg)}');
     try {
-      if (await canLaunchUrl(uri)) await launchUrl(uri);
-    } catch (_) {}
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri);
+      } else if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('امکان باز کردن اپلیکیشن پیامک نیست.')));
+      }
+    } catch (_) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('خطا در ارسال پیامک')));
+      }
+    }
   }
 }
 
 // ======================== باشگاه مشتریان ========================
 class BulkSmsScreen extends StatefulWidget {
   final List<Customer> customers;
-
   const BulkSmsScreen({super.key, required this.customers});
-
   @override
   State<BulkSmsScreen> createState() => _BulkSmsScreenState();
 }
@@ -2019,7 +2508,8 @@ class _BulkSmsScreenState extends State<BulkSmsScreen> {
   @override
   void initState() {
     super.initState();
-    _msgCtrl.text = 'مشتری گرامی کلینیک برق خودرو مهندس،\nخدمات تخصصی برق، باتری، دینام و استارت خودرو با ضمانت.\nتلفن: [شماره تماس]';
+    _msgCtrl.text =
+        'مشتری گرامی کلینیک برق خودرو مهندس،\nخدمات تخصصی برق، باتری، دینام و استارت خودرو با ضمانت.\nتلفن: [شماره تماس]';
   }
 
   @override
@@ -2030,7 +2520,7 @@ class _BulkSmsScreenState extends State<BulkSmsScreen> {
 
   List<String> _getValidPhones() {
     final Set<String> phones = {};
-    for (var c in widget.customers) {
+    for (final c in widget.customers) {
       final p = NumberHelper.cleanNumbers(c.phone);
       if (p.isNotEmpty && p.length >= 10) phones.add(p);
     }
@@ -2039,28 +2529,37 @@ class _BulkSmsScreenState extends State<BulkSmsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
     final phones = _getValidPhones();
 
     return Scaffold(
-      appBar: AppBar(title: const Text('📢 باشگاه مشتریان و پیامک گروهی'), backgroundColor: const Color(0xFF0F172A)),
+      appBar: AppBar(title: const Text('📢 باشگاه مشتریان و پیامک گروهی')),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           children: [
             Container(
               padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(color: const Color(0xFF0284C7).withOpacity(0.2), borderRadius: BorderRadius.circular(14), border: Border.all(color: Colors.cyanAccent)),
+              decoration: BoxDecoration(
+                  color: cs.primary.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: cs.primary)),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text('${phones.length} شماره تماس ثبت شده', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Colors.greenAccent)),
+                  Text('${phones.length} شماره تماس ثبت شده',
+                      style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 15,
+                          color: Colors.greenAccent)),
                   ElevatedButton.icon(
                     style: ElevatedButton.styleFrom(backgroundColor: Colors.teal[800]),
                     icon: const Icon(Icons.copy, size: 16),
                     label: const Text('کپی شماره‌ها', style: TextStyle(fontSize: 12)),
                     onPressed: () {
                       Clipboard.setData(ClipboardData(text: phones.join(', ')));
-                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('شماره‌ها کپی شدند.')));
+                      ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('شماره‌ها کپی شدند.')));
                     },
                   ),
                 ],
@@ -2070,29 +2569,70 @@ class _BulkSmsScreenState extends State<BulkSmsScreen> {
             TextField(
               controller: _msgCtrl,
               maxLines: 4,
-              decoration: InputDecoration(
-                labelText: 'متن پیامک گروهی',
-                filled: true,
-                fillColor: const Color(0xFF131D31),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
-              ),
+              decoration: const InputDecoration(labelText: 'متن پیامک گروهی'),
             ),
             const SizedBox(height: 16),
             ElevatedButton.icon(
-              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0284C7), minimumSize: const Size.fromHeight(48)),
+              style: ElevatedButton.styleFrom(
+                  backgroundColor: cs.primary, minimumSize: const Size.fromHeight(48)),
               icon: const Icon(Icons.send, color: Colors.white),
-              label: const Text('ارسال پیامک دسته‌جمعی', style: TextStyle(color: Colors.white)),
+              label: const Text('ارسال پیامک دسته‌جمعی',
+                  style: TextStyle(color: Colors.white)),
               onPressed: () async {
                 if (phones.isEmpty) return;
+                final batch = phones.take(20).toList();
                 final isIos = !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
-                final separator = isIos ? ';' : ',';
-                final phoneList = phones.take(20).join(separator);
-                final encoded = Uri.encodeComponent(_msgCtrl.text);
-                final uri = Uri.parse('sms:$phoneList?body=$encoded');
+                final sep = isIos ? ';' : ',';
+                final uri = Uri.parse(
+                    'sms:${batch.join(sep)}?body=${Uri.encodeComponent(_msgCtrl.text)}');
                 try {
-                  if (await canLaunchUrl(uri)) await launchUrl(uri);
-                } catch (_) {}
+                  if (await canLaunchUrl(uri)) {
+                    await launchUrl(uri);
+                    if (phones.length > 20 && context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                            content: Text(
+                                'فقط ۲۰ شماره اول ارسال شد (از ${phones.length} شماره). برای بقیه دوباره بزنید.')),
+                      );
+                    }
+                  } else if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('امکان باز کردن اپلیکیشن پیامک نیست.')));
+                  }
+                } catch (_) {
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                          content: Text('خطا در باز کردن اپلیکیشن پیامک'),
+                          backgroundColor: Colors.redAccent),
+                    );
+                  }
+                }
               },
+            ),
+            const SizedBox(height: 24),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(12.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(children: [
+                      Icon(Icons.info_outline, color: cs.primary, size: 18),
+                      const SizedBox(width: 6),
+                      const Text('راهنما',
+                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                    ]),
+                    const SizedBox(height: 8),
+                    Text(
+                      '• پیامک از اپلیکیشن پیش‌فرض گوشی شما ارسال می‌شود.\n'
+                      '• در اندروید تا ۲۰ شماره در یک پیامک، در iOS با جداکننده‌ی ";".\n'
+                      '• برای ارسال انبوه واقعی از پنل‌های SMS استفاده کنید.',
+                      style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant, height: 1.6),
+                    ),
+                  ],
+                ),
+              ),
             ),
           ],
         ),
@@ -2101,17 +2641,16 @@ class _BulkSmsScreenState extends State<BulkSmsScreen> {
   }
 }
 
-// ======================== داشبورد دخل و سود روزانه و ماهانه ========================
+// ======================== داشبورد دخل و گزارش ========================
 class DailyReportScreen extends StatefulWidget {
   final List<Customer> customers;
-
   const DailyReportScreen({super.key, required this.customers});
-
   @override
   State<DailyReportScreen> createState() => _DailyReportScreenState();
 }
 
-class _DailyReportScreenState extends State<DailyReportScreen> with SingleTickerProviderStateMixin {
+class _DailyReportScreenState extends State<DailyReportScreen>
+    with SingleTickerProviderStateMixin {
   late TabController _tabController;
   late String selectedDay;
   late String selectedMonth;
@@ -2135,135 +2674,363 @@ class _DailyReportScreenState extends State<DailyReportScreen> with SingleTicker
     return Scaffold(
       appBar: AppBar(
         title: const Text('📊 دخل و گزارش مالی کارگاه'),
-        backgroundColor: const Color(0xFF0F172A),
         bottom: TabBar(
           controller: _tabController,
           indicatorColor: Colors.cyanAccent,
           labelColor: Colors.cyanAccent,
-          tabs: const [Tab(text: 'گزارش روزانه'), Tab(text: 'گزارش ماهانه')],
+          tabs: const [
+            Tab(text: 'گزارش روزانه'),
+            Tab(text: 'گزارش ماهانه'),
+          ],
         ),
       ),
       body: TabBarView(
         controller: _tabController,
-        children: [_buildReportView(isMonthly: false), _buildReportView(isMonthly: true)],
+        children: [
+          _buildReportView(isMonthly: false),
+          _buildReportView(isMonthly: true),
+        ],
       ),
     );
   }
 
+  bool _isValidDate(String s, {required bool monthly}) {
+    final regex = monthly ? RegExp(r'^\d{4}/\d{1,2}$') : RegExp(r'^\d{4}/\d{1,2}/\d{1,2}$');
+    if (!regex.hasMatch(s.trim())) return false;
+    try {
+      final parts = s.split('/');
+      final m = int.parse(parts[1]);
+      return m >= 1 && m <= 12;
+    } catch (_) {
+      return false;
+    }
+  }
+
   Widget _buildReportView({required bool isMonthly}) {
+    final cs = Theme.of(context).colorScheme;
+    final target = isMonthly ? selectedMonth : selectedDay;
+
     List<Map<String, dynamic>> servicesList = [];
     int totalLabor = 0;
     int totalParts = 0;
+    int totalDiscount = 0;
+    int totalIncome = 0;
+    int totalPaid = 0;
+    int totalDebtCreated = 0;
     int totalPos = 0;
     int totalCash = 0;
 
-    final target = isMonthly ? selectedMonth : selectedDay;
-
-    for (var cust in widget.customers) {
-      for (var car in cust.cars) {
-        for (var s in car.services) {
+    for (final cust in widget.customers) {
+      for (final car in cust.cars) {
+        for (final s in car.services) {
           final isMatch = isMonthly ? s.date.startsWith(target) : (s.date == target);
-          if (isMatch) {
-            totalLabor += s.laborTotal;
-            totalParts += s.partsTotal;
-            if (s.paymentMethod.contains('POS') || s.paymentMethod.contains('کارت‌خوان')) {
-              totalPos += s.paidAmount;
-            } else {
-              totalCash += s.paidAmount;
-            }
-            servicesList.add({'customer': cust.name, 'car': car.model, 'service': s});
+          if (!isMatch) continue;
+
+          totalLabor += s.laborTotal;
+          totalParts += s.partsTotal;
+          totalDiscount += s.discount;
+          totalIncome += s.grandTotal;
+          totalPaid += s.paidAmount;
+          totalDebtCreated += s.remainingDebt;
+
+          final isPos = s.paymentMethod.contains('POS') ||
+              s.paymentMethod.contains('کارت‌خوان');
+          if (isPos) {
+            totalPos += s.paidAmount;
+          } else {
+            totalCash += s.paidAmount;
           }
+
+          servicesList.add({
+            'customer': cust.name,
+            'car': car.model,
+            'service': s,
+          });
         }
       }
     }
 
-    final totalIncome = totalLabor + totalParts;
-
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16.0),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(isMonthly ? 'ماه: $target' : 'تاریخ: $target', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.amberAccent)),
+              Text(
+                isMonthly ? 'ماه: $target' : 'تاریخ: $target',
+                style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                    color: Colors.amberAccent),
+              ),
               IconButton(
                 icon: const Icon(Icons.edit_calendar, color: Colors.cyanAccent),
-                onPressed: () {
-                  final ctrl = TextEditingController(text: target);
-                  showDialog(
-                    context: context,
-                    builder: (ctx) => AlertDialog(
-                      title: Text(isMonthly ? 'تغییر ماه (مثلاً 1405/08)' : 'تغییر تاریخ (مثلاً 1405/08/18)'),
-                      content: TextField(controller: ctrl),
-                      actions: [
-                        ElevatedButton(
-                          onPressed: () {
-                            setState(() {
-                              if (isMonthly) {
-                                selectedMonth = ctrl.text.trim();
-                              } else {
-                                selectedDay = ctrl.text.trim();
-                              }
-                            });
-                            Navigator.pop(ctx);
-                          },
-                          child: const Text('اعمال'),
-                        )
-                      ],
-                    ),
-                  );
-                },
-              )
+                tooltip: 'تغییر بازه',
+                onPressed: () =>
+                    _openDateEditor(isMonthly: isMonthly, current: target),
+              ),
             ],
           ),
           const SizedBox(height: 12),
           Card(
-            color: const Color(0xFF0284C7).withOpacity(0.2),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: const BorderSide(color: Colors.cyanAccent)),
+            color: cs.primary.withOpacity(0.15),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: BorderSide(color: cs.primary),
+            ),
             child: Padding(
               padding: const EdgeInsets.all(16.0),
               child: Column(
                 children: [
-                  const Text('💰 دستمزد و سود خالص (اجرت‌ها)', style: TextStyle(fontSize: 14, color: Colors.white70)),
+                  Text('💰 دستمزد و سود خالص (اجرت‌ها)',
+                      style: TextStyle(fontSize: 14, color: cs.onSurfaceVariant)),
                   const SizedBox(height: 6),
-                  Text(formatToman(totalLabor), style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.greenAccent)),
-                  const Divider(height: 20),
+                  Text(
+                    formatToman(totalLabor),
+                    style: const TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.greenAccent),
+                  ),
+                  const Divider(height: 22),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceAround,
                     children: [
-                      Column(children: [const Text('فروش قطعات', style: TextStyle(fontSize: 11, color: Colors.grey)), Text(formatToman(totalParts), style: const TextStyle(fontWeight: FontWeight.bold))]),
-                      Column(children: [const Text('کل دخل ناخالص', style: TextStyle(fontSize: 11, color: Colors.grey)), Text(formatToman(totalIncome), style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.amberAccent))]),
+                      Column(children: [
+                        Text('فروش قطعات',
+                            style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant)),
+                        Text(formatToman(totalParts),
+                            style: const TextStyle(fontWeight: FontWeight.bold)),
+                      ]),
+                      Column(children: [
+                        Text('کل دخل ناخالص',
+                            style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant)),
+                        Text(formatToman(totalLabor + totalParts),
+                            style: const TextStyle(
+                                fontWeight: FontWeight.bold, color: Colors.amberAccent)),
+                      ]),
                     ],
                   ),
-                  const Divider(height: 20),
+                  if (totalDiscount > 0) ...[
+                    const SizedBox(height: 10),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.local_offer,
+                            size: 14, color: Colors.orangeAccent),
+                        const SizedBox(width: 4),
+                        Text('مجموع تخفیف داده‌شده: ${formatToman(totalDiscount)}',
+                            style: const TextStyle(
+                                fontSize: 12, color: Colors.orangeAccent)),
+                      ],
+                    ),
+                  ],
+                  const Divider(height: 22),
                   Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceAround,
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text('💳 پوز: ${formatToman(totalPos)}', style: const TextStyle(fontSize: 12, color: Colors.cyanAccent)),
-                      Text('💵 نقد/کارت: ${formatToman(totalCash)}', style: const TextStyle(fontSize: 12, color: Colors.amberAccent)),
+                      Text('درآمد خالص (بعد از تخفیف):',
+                          style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant)),
+                      Text(formatToman(totalIncome),
+                          style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 15,
+                              color: Colors.greenAccent)),
                     ],
                   ),
                 ],
               ),
             ),
           ),
-          const SizedBox(height: 16),
-          Align(alignment: Alignment.centerRight, child: Text('فاکتورهای ثبت شده (${servicesList.length}):', style: const TextStyle(fontWeight: FontWeight.bold))),
-          const SizedBox(height: 8),
-          ...servicesList.map((item) {
-            final s = item['service'] as ServiceRecord;
-            return Card(
-              margin: const EdgeInsets.symmetric(vertical: 4),
-              child: ListTile(
-                title: Text('${item['car']} - ${item['customer']}'),
-                subtitle: Text('${s.summaryTitle}\nاجرت: ${formatToman(s.laborTotal)} | پرداختی: ${formatToman(s.paidAmount)}'),
-                trailing: Text(formatToman(s.grandTotal), style: const TextStyle(color: Colors.greenAccent, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 12),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(14.0),
+              child: Column(
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceAround,
+                    children: [
+                      _metricTile(context,
+                          icon: Icons.credit_card,
+                          label: 'پوز',
+                          value: formatToman(totalPos),
+                          color: Colors.cyanAccent),
+                      Container(
+                          height: 30,
+                          width: 1,
+                          color: cs.outline.withOpacity(0.4)),
+                      _metricTile(context,
+                          icon: Icons.payments,
+                          label: 'نقد / کارت‌به‌کارت',
+                          value: formatToman(totalCash),
+                          color: Colors.amberAccent),
+                    ],
+                  ),
+                  const Divider(height: 20),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('💳 مجموع دریافتی:',
+                          style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant)),
+                      Text(formatToman(totalPaid),
+                          style:
+                              const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                    ],
+                  ),
+                  if (totalDebtCreated > 0) ...[
+                    const SizedBox(height: 8),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text('⚠️ نسیه ایجادشده در این بازه:',
+                            style: TextStyle(fontSize: 12, color: Colors.redAccent)),
+                        Text(formatToman(totalDebtCreated),
+                            style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13,
+                                color: Colors.redAccent)),
+                      ],
+                    ),
+                  ],
+                ],
               ),
-            );
-          }),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Align(
+            alignment: Alignment.centerRight,
+            child: Text('فاکتورهای ثبت‌شده (${servicesList.length}):',
+                style: const TextStyle(fontWeight: FontWeight.bold)),
+          ),
+          const SizedBox(height: 8),
+          if (servicesList.isEmpty)
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(24.0),
+                child: Center(
+                  child: Text(
+                    'در این بازه هیچ فاکتوری ثبت نشده است.',
+                    style: TextStyle(color: cs.onSurfaceVariant, fontSize: 13),
+                  ),
+                ),
+              ),
+            )
+          else
+            ...servicesList.map((item) {
+              final s = item['service'] as ServiceRecord;
+              return Card(
+                margin: const EdgeInsets.symmetric(vertical: 4),
+                child: ListTile(
+                  title: Text('${item['car']} - ${item['customer']}',
+                      style:
+                          const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                  subtitle: Text(
+                    '${s.summaryTitle}\n'
+                    'اجرت: ${formatToman(s.laborTotal)}  |  پرداختی: ${formatToman(s.paidAmount)}'
+                    '${s.discount > 0 ? "  |  تخفیف: ${formatToman(s.discount)}" : ""}',
+                    style: const TextStyle(fontSize: 11),
+                  ),
+                  isThreeLine: true,
+                  trailing: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text(formatToman(s.grandTotal),
+                          style: const TextStyle(
+                              color: Colors.greenAccent,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13)),
+                      if (s.remainingDebt > 0)
+                        Text('بدهی: ${formatToman(s.remainingDebt)}',
+                            style: const TextStyle(
+                                color: Colors.redAccent, fontSize: 10)),
+                    ],
+                  ),
+                ),
+              );
+            }),
         ],
       ),
     );
+  }
+
+  Widget _metricTile(
+    BuildContext context, {
+    required IconData icon,
+    required String label,
+    required String value,
+    required Color color,
+  }) {
+    return Column(
+      children: [
+        Icon(icon, color: color, size: 20),
+        const SizedBox(height: 4),
+        Text(label, style: const TextStyle(fontSize: 10, color: Colors.grey)),
+        const SizedBox(height: 2),
+        Text(value,
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: color)),
+      ],
+    );
+  }
+
+  void _openDateEditor({required bool isMonthly, required String current}) {
+    final ctrl = TextEditingController(text: current);
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(isMonthly
+            ? 'تغییر ماه (مثلاً 1405/08)'
+            : 'تغییر تاریخ (مثلاً 1405/08/18)'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: ctrl,
+              inputFormatters: [
+                FilteringTextInputFormatter.allow(RegExp(r'[0-9۰-۹٠-٩/]')),
+              ],
+              decoration: const InputDecoration(
+                hintText: '1405/08/18',
+                labelText: 'تاریخ شمسی',
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'قالب تاریخ: سال/ماه/روز (با اعداد انگلیسی یا فارسی)',
+              style: TextStyle(fontSize: 11),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('انصراف')),
+          ElevatedButton(
+            onPressed: () {
+              final val = NumberHelper.cleanNumbers(ctrl.text);
+              if (!_isValidDate(val, monthly: isMonthly)) {
+                ScaffoldMessenger.of(ctx).showSnackBar(
+                  const SnackBar(
+                    content: Text('قالب تاریخ نامعتبر است!'),
+                    backgroundColor: Colors.redAccent,
+                  ),
+                );
+                return;
+              }
+              setState(() {
+                if (isMonthly) {
+                  selectedMonth = val;
+                } else {
+                  selectedDay = val;
+                }
+              });
+              Navigator.pop(ctx);
+            },
+            child: const Text('اعمال'),
+          ),
+        ],
+      ),
+    ).whenComplete(() => ctrl.dispose());
   }
 }

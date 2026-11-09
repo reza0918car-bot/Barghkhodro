@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -21,7 +22,6 @@ void main() {
 }
 
 // ======================== ثابت‌ها ========================
-/// حروف استاندارد پلاک ملی ایران (۱۳ حرف)
 const List<String> kIranPlateLetters = [
   'ب', 'ج', 'د', 'س', 'ص', 'ط', 'ق', 'ل', 'م', 'ن', 'و', 'ه', 'ی',
 ];
@@ -32,7 +32,6 @@ const List<String> kPopularCars = [
   'رانا', 'نیسان وانت', 'پیکان وانت', 'ال ۹۰ (تندر)', 'ام‌وی‌ام (MVM)', 'جک (JAC)',
 ];
 
-/// خدمات پیش‌فرض (قابل ویرایش از صفحه‌ی مدیریت قیمت‌ها)
 const List<Map<String, dynamic>> kDefaultQuickLabors = [
   {'title': 'تعمیر و سرویس دینام', 'cost': 350000},
   {'title': 'تعمیر و سرویس استارت', 'cost': 350000},
@@ -49,46 +48,31 @@ enum PlateType { national, temporary, freeZone, regional, personal }
 
 String plateTypeToKey(PlateType t) {
   switch (t) {
-    case PlateType.national:
-      return 'national';
-    case PlateType.temporary:
-      return 'temporary';
-    case PlateType.freeZone:
-      return 'freeZone';
-    case PlateType.regional:
-      return 'regional';
-    case PlateType.personal:
-      return 'personal';
+    case PlateType.national: return 'national';
+    case PlateType.temporary: return 'temporary';
+    case PlateType.freeZone: return 'freeZone';
+    case PlateType.regional: return 'regional';
+    case PlateType.personal: return 'personal';
   }
 }
 
 PlateType plateTypeFromKey(String? key) {
   switch (key) {
-    case 'temporary':
-      return PlateType.temporary;
-    case 'freeZone':
-      return PlateType.freeZone;
-    case 'regional':
-      return PlateType.regional;
-    case 'personal':
-      return PlateType.personal;
-    default:
-      return PlateType.national;
+    case 'temporary': return PlateType.temporary;
+    case 'freeZone': return PlateType.freeZone;
+    case 'regional': return PlateType.regional;
+    case 'personal': return PlateType.personal;
+    default: return PlateType.national;
   }
 }
 
 String plateTypeLabel(PlateType t) {
   switch (t) {
-    case PlateType.national:
-      return 'پلاک ملی';
-    case PlateType.temporary:
-      return 'گذر موقت';
-    case PlateType.freeZone:
-      return 'منطقه آزاد';
-    case PlateType.regional:
-      return 'منطقه‌ای/مرزی';
-    case PlateType.personal:
-      return 'شخصی/دلخواه';
+    case PlateType.national: return 'پلاک ملی';
+    case PlateType.temporary: return 'گذر موقت';
+    case PlateType.freeZone: return 'منطقه آزاد';
+    case PlateType.regional: return 'منطقه‌ای/مرزی';
+    case PlateType.personal: return 'شخصی/دلخواه';
   }
 }
 
@@ -127,7 +111,6 @@ class NumberHelper {
   }
 }
 
-/// نرمال‌سازی حرف پلاک
 String normalizePlateLetter(String letter) {
   return letter.trim().replaceAll('هـ', 'ه').replaceAll('ي', 'ی').replaceAll('ك', 'ک');
 }
@@ -145,13 +128,8 @@ class JalaliHelper {
     int jy = (gy <= 1600) ? 0 : 979;
     gy -= (gy <= 1600) ? 621 : 1600;
     int gy2 = (gm > 2) ? (gy + 1) : gy;
-    int days = (365 * gy) +
-        ((gy2 + 3) ~/ 4) -
-        ((gy2 + 99) ~/ 100) +
-        ((gy2 + 399) ~/ 400) -
-        80 +
-        gd +
-        gDM[gm - 1];
+    int days = (365 * gy) + ((gy2 + 3) ~/ 4) - ((gy2 + 99) ~/ 100) +
+        ((gy2 + 399) ~/ 400) - 80 + gd + gDM[gm - 1];
     jy += 33 * (days ~/ 12053);
     days %= 12053;
     jy += 4 * (days ~/ 1461);
@@ -194,7 +172,6 @@ class PartItem {
       PartItem(name: m['name'] ?? '', price: m['price'] ?? 0);
 }
 
-/// قالب خدمت پیش‌فرض
 class ServiceTemplate {
   String title;
   int cost;
@@ -204,7 +181,6 @@ class ServiceTemplate {
       ServiceTemplate(title: m['title'] ?? '', cost: m['cost'] ?? 0);
 }
 
-/// قالب قطعه پیش‌فرض
 class PartTemplate {
   String name;
   int price;
@@ -214,7 +190,6 @@ class PartTemplate {
       PartTemplate(name: m['name'] ?? '', price: m['price'] ?? 0);
 }
 
-/// مخزن ذخیره‌سازی قالب‌ها در SharedPreferences
 class TemplatesRepository {
   static const _kServiceKey = 'service_templates_v1';
   static const _kPartKey = 'part_templates_v1';
@@ -229,9 +204,7 @@ class TemplatesRepository {
       final raw = prefs.getString(_kServiceKey);
       if (raw == null || raw.isEmpty) return _defaultServices();
       final list = jsonDecode(raw) as List;
-      return list
-          .map((e) => ServiceTemplate.fromMap(e as Map<String, dynamic>))
-          .toList();
+      return list.map((e) => ServiceTemplate.fromMap(e as Map<String, dynamic>)).toList();
     } catch (_) {
       return _defaultServices();
     }
@@ -239,8 +212,7 @@ class TemplatesRepository {
 
   static Future<void> saveServices(List<ServiceTemplate> items) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(
-        _kServiceKey, jsonEncode(items.map((e) => e.toMap()).toList()));
+    await prefs.setString(_kServiceKey, jsonEncode(items.map((e) => e.toMap()).toList()));
   }
 
   static Future<void> resetServicesToDefault() async {
@@ -539,8 +511,7 @@ class _AutoElectricAppState extends State<AutoElectricApp> {
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: const Color(0xFF131D31),
-        border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
       ),
     );
   }
@@ -569,8 +540,7 @@ class _AutoElectricAppState extends State<AutoElectricApp> {
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: Colors.white,
-        border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
       ),
     );
   }
@@ -703,8 +673,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
           border: Border(
-            top: BorderSide(
-                color: Theme.of(context).colorScheme.outline.withOpacity(0.3), width: 0.8),
+            top: BorderSide(color: Theme.of(context).colorScheme.outline.withOpacity(0.3), width: 0.8),
           ),
         ),
         child: BottomNavigationBar(
@@ -908,8 +877,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                   icon: const Icon(Icons.sms, size: 14, color: Colors.white),
                   label: const Text('پیامک',
-                      style:
-                          TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white)),
+                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white)),
                   onPressed: () => Navigator.push(
                     context,
                     MaterialPageRoute(builder: (_) => BulkSmsScreen(customers: widget.customers)),
@@ -1259,12 +1227,12 @@ class _HomeScreenState extends State<HomeScreen> {
                 style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.amber[800],
                     minimumSize: const Size.fromHeight(45)),
-                icon: const Icon(Icons.file_upload, color: Colors.white),
-                label: const Text('بازیابی از متن پشتیبان',
+                icon: const Icon(Icons.file_open, color: Colors.white),
+                label: const Text('انتخاب فایل پشتیبان از گوشی',
                     style: TextStyle(color: Colors.white, fontSize: 13)),
                 onPressed: () {
                   Navigator.pop(ctx);
-                  _openRestoreDialog(context);
+                  _pickAndRestoreBackupFile(context);
                 },
               ),
             ],
@@ -1299,63 +1267,74 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  void _openRestoreDialog(BuildContext context) {
-    final codeCtrl = TextEditingController();
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('بازیابی فایل پشتیبان'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text('محتوای فایل پشتیبان JSON را در کادر زیر قرار دهید:',
-                  style: TextStyle(fontSize: 12)),
-              const SizedBox(height: 8),
-              TextField(
-                controller: codeCtrl,
-                maxLines: 5,
-                decoration:
-                    const InputDecoration(hintText: 'کدهای فایل پشتیبان را Paste کنید...'),
-              ),
-            ],
+  Future<void> _pickAndRestoreBackupFile(BuildContext context) async {
+    try {
+      FilePickerResult? result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['json'],
+      );
+
+      if (result == null) return; 
+
+      PlatformFile file = result.files.first;
+      String filePath = file.path!;
+
+      final fileContent = await File(filePath).readAsString(encoding: utf8);
+      final parsed = await compute(_decodeCustomersIsolate, fileContent);
+
+      if (!context.mounted) return;
+
+      bool? confirm = await showDialog<bool>(
+        context: context,
+        builder: (c) => AlertDialog(
+          title: const Row(children: [
+            Icon(Icons.warning_amber, color: Colors.orange),
+            SizedBox(width: 8),
+            Text('تایید بازیابی'),
+          ]),
+          content: Text(
+            'آیا از بازنویسی اطلاعات فعلی با ${parsed.length} پرونده موجود در فایل پشتیبان اطمینان دارید؟\n\nاطلاعات فعلی پاک خواهند شد!',
+            style: const TextStyle(fontSize: 13),
           ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(c, false),
+                child: const Text('انصراف')),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
+              onPressed: () => Navigator.pop(c, true),
+              child: const Text('بله، بازیابی کن'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('انصراف')),
-          ElevatedButton(
-            onPressed: () async {
-              try {
-                final text = codeCtrl.text.trim();
-                if (text.isEmpty) return;
-                final parsed = await compute(_decodeCustomersIsolate, text);
-                setState(() {
-                  widget.customers.clear();
-                  widget.customers.addAll(parsed);
-                });
-                _applyFilter(searchQuery);
-                widget.onDataChanged();
-                if (context.mounted) {
-                  Navigator.pop(ctx);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('${parsed.length} پرونده بازیابی شد!')),
-                  );
-                }
-              } catch (_) {
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                        content: Text('کد پشتیبان نامعتبر است!'),
-                        backgroundColor: Colors.redAccent),
-                  );
-                }
-              }
-            },
-            child: const Text('اعمال بازیابی'),
-          )
-        ],
-      ),
-    ).whenComplete(() => codeCtrl.dispose());
+      );
+
+      if (confirm != true) return;
+
+      setState(() {
+        widget.customers.clear();
+        widget.customers.addAll(parsed);
+      });
+      _applyFilter(searchQuery);
+      widget.onDataChanged();
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+              content: Text('${parsed.length} پرونده با موفقیت بازیابی شد!'),
+              backgroundColor: Colors.green),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('خطا در بازیابی فایل. آیا فایل انتخاب شده معتبر است؟\n$e'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+    }
   }
 }
 
@@ -2211,7 +2190,6 @@ class _CarEditDialogState extends State<_CarEditDialog> {
     );
   }
 
-  // 👈 اصلاح استایل کادرهای پلاک برای خوانایی در تم تاریک
   Widget _buildNationalPlateInput(ColorScheme cs) {
     return Directionality(
       textDirection: TextDirection.ltr,
@@ -2707,7 +2685,6 @@ class _CarServicesScreenState extends State<CarServicesScreen> {
     );
   }
 
-  // 👈 اصلاح کدگذاری متن برای رفع مشکل علامت سوال
   Future<bool> _launchSms(String phone, String body) async {
     final String encodedBody = Uri.encodeComponent(body);
     final Uri uri = Uri.parse('sms:$phone?body=$encodedBody');
@@ -2887,7 +2864,7 @@ class _CarServicesScreenState extends State<CarServicesScreen> {
   }
 }
 
-// ======================== دیالوگ فاکتور (با هشدار خروج بدون ذخیره) ========================
+// ======================== دیالوگ فاکتور ========================
 class _ServiceEditDialog extends StatefulWidget {
   final ServiceRecord? serviceToEdit;
   final Function(ServiceRecord) onSave;
@@ -3473,7 +3450,6 @@ class DebtorsScreen extends StatelessWidget {
     );
   }
 
-  // 👈 اصلاح کدگذاری متن برای رفع مشکل علامت سوال
   Future<void> _sendDebtReminderSms(Customer c, BuildContext context) async {
     final cleanPhone = NumberHelper.cleanNumbers(c.phone);
     if (cleanPhone.isEmpty) {
@@ -3588,7 +3564,6 @@ class _BulkSmsScreenState extends State<BulkSmsScreen> {
               icon: const Icon(Icons.send, color: Colors.white),
               label: const Text('ارسال پیامک دسته‌جمعی',
                   style: TextStyle(color: Colors.white)),
-              // 👈 اصلاح کدگذاری متن برای رفع مشکل علامت سوال
               onPressed: () async {
                 if (phones.isEmpty) return;
                 final batch = phones.take(20).toList();

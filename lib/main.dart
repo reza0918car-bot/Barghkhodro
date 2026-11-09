@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:cross_file/cross_file.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -1267,9 +1268,8 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-    Future<void> _pickAndRestoreBackupFile(BuildContext context) async {
+  Future<void> _pickAndRestoreBackupFile(BuildContext context) async {
     try {
-      // 👈 استفاده از API جدید file_picker (بدون platform)
       final result = await FilePicker.pickFiles(
         type: FileType.custom,
         allowedExtensions: ['json'],
@@ -1337,6 +1337,7 @@ class _HomeScreenState extends State<HomeScreen> {
       }
     }
   }
+}
 
 // ======================== صفحه مدیریت قیمت‌ها ========================
 class TemplatesManagerScreen extends StatefulWidget {
@@ -3460,10 +3461,10 @@ class DebtorsScreen extends StatelessWidget {
     final msg = 'مشتری گرامی ${c.name}\n'
         'با سلام، احتراماً مانده حساب شما در کلینیک برق خودرو مهندس مبلغ ${formatToman(c.totalDebt)} می‌باشد.\n'
         'با تشکر - برق خودرو مهندس';
-        
+
     final String encodedMsg = Uri.encodeComponent(msg);
     final Uri uri = Uri.parse('sms:$cleanPhone?body=$encodedMsg');
-    
+
     try {
       if (await canLaunchUrl(uri)) {
         await launchUrl(uri);
@@ -3569,12 +3570,12 @@ class _BulkSmsScreenState extends State<BulkSmsScreen> {
                 final batch = phones.take(20).toList();
                 final isIos = !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
                 final sep = isIos ? ';' : ',';
-                
+
                 final String encodedMsg = Uri.encodeComponent(_msgCtrl.text);
                 final String phoneList = batch.join(sep);
-                
+
                 final Uri uri = Uri.parse('sms:$phoneList?body=$encodedMsg');
-                
+
                 try {
                   if (await canLaunchUrl(uri)) {
                     await launchUrl(uri);

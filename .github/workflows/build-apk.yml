@@ -41,16 +41,22 @@ jobs:
             sed -i '/<manifest/a \    <uses-permission android:name="android.permission.INTERNET"\/>' android/app/src/main/AndroidManifest.xml
           fi
 
-          # ۳. راه‌حل قطعی مشکل Kotlin 2.4.0 و خطای 504 گیت‌هاب
-          # ما به Gradle زور می‌گوییم از Kotlin 2.0.21 استفاده کند که روی Maven Central موجود است
+          # ۳. راه‌حل مشکل Kotlin و خطای 504
+          # این بار از نسخه 2.1.0 استفاده می‌کنیم که در Maven Central موجود است
           if [ -f "android/build.gradle" ]; then
             echo "Adding Kotlin version pin to build.gradle..."
-            sed -i "s/ext.kotlin_version = .*/ext.kotlin_version = '2.0.21'/" android/build.gradle || true
-            echo -e "\nsubprojects {\n    project.configurations.all {\n        resolutionStrategy.eachDependency { details ->\n            if (details.requested.group == 'org.jetbrains.kotlin') {\n                details.useVersion '2.0.21'\n            }\n        }\n    }\n}" >> android/build.gradle
+            sed -i "s/ext.kotlin_version = .*/ext.kotlin_version = '2.1.0'/" android/build.gradle || true
+            
+            # اضافه کردن مخزن gradlePluginPortal برای پیدا کردن پکیج‌های Kotlin
+            sed -i '/mavenCentral()/a \        maven { url "https://plugins.gradle.org/m2/" }' android/build.gradle || true
+
+            # اجبار به استفاده از نسخه 2.1.0
+            echo -e "\nsubprojects {\n    project.configurations.all {\n        resolutionStrategy.eachDependency { details ->\n            if (details.requested.group == 'org.jetbrains.kotlin') {\n                details.useVersion '2.1.0'\n            }\n        }\n    }\n}" >> android/build.gradle
           elif [ -f "android/build.gradle.kts" ]; then
             echo "Adding Kotlin version pin to build.gradle.kts..."
-            sed -i 's/val kotlin_version: String by project/val kotlin_version: String = "2.0.21"/' android/build.gradle.kts || true
-            echo -e "\nsubprojects {\n    configurations.all {\n        resolutionStrategy.eachDependency {\n            if (requested.group == \"org.jetbrains.kotlin\") {\n                useVersion(\"2.0.21\")\n            }\n        }\n    }\n}" >> android/build.gradle.kts
+            sed -i 's/val kotlin_version: String by project/val kotlin_version: String = "2.1.0"/' android/build.gradle.kts || true
+            
+            echo -e "\nsubprojects {\n    configurations.all {\n        resolutionStrategy.eachDependency {\n            if (requested.group == \"org.jetbrains.kotlin\") {\n                useVersion(\"2.1.0\")\n            }\n        }\n    }\n}" >> android/build.gradle.kts
           fi
 
       - name: Clear Gradle Cache

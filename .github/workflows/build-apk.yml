@@ -1,62 +1,87 @@
-ame: Build Android APK
+name: Build APK
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ main, master ]
   workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
-    - name: Fix or Generate Android Files
-        run: |
-          if [ ! -f "android/app/build.gradle" ] && [ ! -f "android/app/build.gradle.kts" ]; then
-            echo "Android files missing. Regenerating..."
-            rm -rf android
-            flutter create --platforms=android .
-          fi
+      - name: Checkout Code
+        uses: actions/checkout@v4
 
-
-          sed -i 's/android:label="[^"]*"/android:label="برق خودرو مهندس"/g' android/app/src/main/AndroidManifest.xml
-
-          chmod +x android/gradlew || true
-          - name: Fix or Generate Android Files
-        run: |
-          if [ ! -f "android/app/build.gradle" ] && [ ! -f "android/app/build.gradle.kts" ]; then
-            echo "Android files missing. Regenerating..."
-            rm -rf android
-            flutter create --platforms=android .
-          fi
-
-          # ۱. تغییر نام برنامه به «برق خودرو مهندس»
-          sed -i 's/android:label="[^"]*"/android:label="برق خودرو مهندس"/g' android/app/src/main/AndroidManifest.xml
-
-          # ۲. اضافه کردن مجوز اینترنت برای دانلود شدن فونت فارسی
-          sed -i '/<manifest/a \    <uses-permission android:name="android.permission.INTERNET"\/>' android/app/src/main/AndroidManifest.xml
-
-          chmod +x android/gradlew || true
-      - uses: actions/checkout@v4
-
-      - name: Set up Java
+      - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
           java-version: '17'
 
-      - name: Set up Flutter
+      - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
+          cache: true
 
-      - name: Get dependencies
-        run: flutter pub get
+      - name: Fix or Generate Android Files
+        run: |
+          if [ ! -f "android/app/build.gradle" ] && [ ! -f "android/app/build.gradle.kts" ]; then
+            echo "Android files missing. Regenerating..."
+            rm -rf android
+            flutter create --platforms=android .
+          fi
 
-      - name: Build APK
-        run: flutter build apk --release
+          # ۱. تغییر نام برنامه
+          sed -i 's/android:label="[^"]*"/android:label="برق خودرو مهندس"/g' android/app/src/main/AndroidManifest.xml
 
-      - name: Upload APK
+          # ۲. اضافه کردن مجوز اینترنت
+          if ! grep -q "android.permission.INTERNET" android/app/src/main/AndroidManifest.xml; then
+            sed -i '/<manifest/a \    <uses-permission android:name="android.permission.INTERNET"\/>' android/app/src/main/AndroidManifest.xml
+          fi
+
+          # ۳. راه‌حل قطعی مشکل Kotlin 2.4.0 و خطای 504 گیت‌هاب
+          # ما به Gradle زور می‌گوییم از Kotlin 2.0.21 استفاده کند که روی Maven Central موجود است
+          if [ -f "android/build.gradle" ]; then
+            echo "Adding Kotlin version pin to build.gradle..."
+            sed -i "s/ext.kotlin_version = .*/ext.kotlin_version = '2.0.21'/" android/build.gradle || true
+            echo -e "\nsubprojects {\n    project.configurations.all {\n        resolutionStrategy.eachDependency { details ->\n            if (details.requested.group == 'org.jetbrains.kotlin') {\n                details.useVersion '2.0.21'\n            }\n        }\n    }\n}" >> android/build.gradle
+          elif [ -f "android/build.gradle.kts" ]; then
+            echo "Adding Kotlin version pin to build.gradle.kts..."
+            sed -i 's/val kotlin_version: String by project/val kotlin_version: String = "2.0.21"/' android/build.gradle.kts || true
+            echo -e "\nsubprojects {\n    configurations.all {\n        resolutionStrategy.eachDependency {\n            if (requested.group == \"org.jetbrains.kotlin\") {\n                useVersion(\"2.0.21\")\n            }\n        }\n    }\n}" >> android/build.gradle.kts
+          fi
+
+      - name: Clear Gradle Cache
+        run: |
+          rm -rf ~/.gradle/caches
+          rm -rf ~/.gradle/wrapper
+
+      - name: Install Dependencies
+        run: |
+          flutter clean
+          flutter pub get
+          flutter pub upgrade --major-versions
+
+      - name: Build APK (with auto-retry)
+        run: |
+          success=0
+          for i in 1 2 3; do
+            echo "Build attempt $i of 3..."
+            if flutter build apk --release; then
+              success=1
+              break
+            fi
+            echo "Build attempt $i failed, retrying in 30 seconds..."
+            sleep 30
+          done
+          if [ $success -ne 1 ]; then
+            exit 1
+          fi
+
+      - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: AutoElectric-App
+          name: bargh-khodro-mohandes-apk
           path: build/app/outputs/flutter-apk/app-release.apk

@@ -43,6 +43,58 @@ const List<Map<String, dynamic>> kQuickLabors = [
   {'title': 'شارژ گاز و نشت‌یابی کولر', 'cost': 450000},
 ];
 
+// ======================== انواع پلاک ========================
+enum PlateType { national, temporary, freeZone, regional, personal }
+
+String plateTypeToKey(PlateType t) {
+  switch (t) {
+    case PlateType.national:
+      return 'national';
+    case PlateType.temporary:
+      return 'temporary';
+    case PlateType.freeZone:
+      return 'freeZone';
+    case PlateType.regional:
+      return 'regional';
+    case PlateType.personal:
+      return 'personal';
+  }
+}
+
+PlateType plateTypeFromKey(String? key) {
+  switch (key) {
+    case 'temporary':
+      return PlateType.temporary;
+    case 'freeZone':
+      return PlateType.freeZone;
+    case 'regional':
+      return PlateType.regional;
+    case 'personal':
+      return PlateType.personal;
+    default:
+      return PlateType.national;
+  }
+}
+
+String plateTypeLabel(PlateType t) {
+  switch (t) {
+    case PlateType.national:
+      return 'پلاک ملی';
+    case PlateType.temporary:
+      return 'گذر موقت';
+    case PlateType.freeZone:
+      return 'منطقه آزاد';
+    case PlateType.regional:
+      return 'منطقه‌ای/مرزی';
+    case PlateType.personal:
+      return 'شخصی/دلخواه';
+  }
+}
+
+const List<String> kFreeZones = [
+  'کیش', 'قشم', 'اروند', 'ارس', 'انزلی', 'چابهار', 'ماکو', 'اروندکنار',
+];
+
 // ======================== ابزارهای کمکی ========================
 class NumberHelper {
   static String cleanNumbers(String input) {
@@ -92,8 +144,13 @@ class JalaliHelper {
     int jy = (gy <= 1600) ? 0 : 979;
     gy -= (gy <= 1600) ? 621 : 1600;
     int gy2 = (gm > 2) ? (gy + 1) : gy;
-    int days = (365 * gy) + ((gy2 + 3) ~/ 4) - ((gy2 + 99) ~/ 100) +
-        ((gy2 + 399) ~/ 400) - 80 + gd + gDM[gm - 1];
+    int days = (365 * gy) +
+        ((gy2 + 3) ~/ 4) -
+        ((gy2 + 99) ~/ 100) +
+        ((gy2 + 399) ~/ 400) -
+        80 +
+        gd +
+        gDM[gm - 1];
     jy += 33 * (days ~/ 12053);
     days %= 12053;
     jy += 4 * (days ~/ 1461);
@@ -209,47 +266,87 @@ class ServiceRecord {
 class Car {
   String id;
   String model;
+  PlateType plateType;
   String plateTwoDigits;
   String plateLetter;
   String plateThreeDigits;
   String plateProvinceCode;
+  String customPlate;
+  String freeZoneName;
   List<ServiceRecord> services;
 
   Car({
     required this.id,
     required this.model,
+    this.plateType = PlateType.national,
     required this.plateTwoDigits,
     required this.plateLetter,
     required this.plateThreeDigits,
     required this.plateProvinceCode,
+    this.customPlate = '',
+    this.freeZoneName = '',
     required this.services,
   });
 
-  String get fullPlate =>
-      '$plateTwoDigits $plateLetter $plateThreeDigits - ایران $plateProvinceCode';
+  String get fullPlate {
+    switch (plateType) {
+      case PlateType.national:
+        if (plateTwoDigits.isEmpty && plateThreeDigits.isEmpty) return 'بدون پلاک';
+        return '$plateTwoDigits $plateLetter $plateThreeDigits - ایران $plateProvinceCode';
+      case PlateType.temporary:
+        return 'گذر موقت - $customPlate';
+      case PlateType.freeZone:
+        return 'منطقه آزاد $freeZoneName - $customPlate';
+      case PlateType.regional:
+        return 'منطقه‌ای - $customPlate';
+      case PlateType.personal:
+        return 'شخصی - $customPlate';
+    }
+  }
 
-  bool matchesPlate(String otherTwo, String otherLetter, String otherThree, String otherProv) {
-    final t1 = NumberHelper.cleanNumbers(plateTwoDigits);
-    final t2 = NumberHelper.cleanNumbers(otherTwo);
-    final l1 = normalizePlateLetter(plateLetter);
-    final l2 = normalizePlateLetter(otherLetter);
-    final th1 = NumberHelper.cleanNumbers(plateThreeDigits);
-    final th2 = NumberHelper.cleanNumbers(otherThree);
-    final p1 = NumberHelper.cleanNumbers(plateProvinceCode);
-    final p2 = NumberHelper.cleanNumbers(otherProv);
-    if (t1.isEmpty || th1.isEmpty || t2.isEmpty || th2.isEmpty) return false;
-    if (t1 != t2 || l1 != l2 || th1 != th2) return false;
-    if (p1.isNotEmpty && p2.isNotEmpty) return p1 == p2;
+  bool get hasAnyPlate {
+    if (plateType == PlateType.national) {
+      return plateTwoDigits.isNotEmpty && plateThreeDigits.isNotEmpty;
+    }
+    return customPlate.trim().isNotEmpty;
+  }
+
+  bool matchesPlate(Car other) {
+    if (plateType != other.plateType) return false;
+    if (plateType == PlateType.national) {
+      final t1 = NumberHelper.cleanNumbers(plateTwoDigits);
+      final t2 = NumberHelper.cleanNumbers(other.plateTwoDigits);
+      final l1 = normalizePlateLetter(plateLetter);
+      final l2 = normalizePlateLetter(other.plateLetter);
+      final th1 = NumberHelper.cleanNumbers(plateThreeDigits);
+      final th2 = NumberHelper.cleanNumbers(other.plateThreeDigits);
+      final p1 = NumberHelper.cleanNumbers(plateProvinceCode);
+      final p2 = NumberHelper.cleanNumbers(other.plateProvinceCode);
+      if (t1.isEmpty || th1.isEmpty || t2.isEmpty || th2.isEmpty) return false;
+      if (t1 != t2 || l1 != l2 || th1 != th2) return false;
+      if (p1.isNotEmpty && p2.isNotEmpty) return p1 == p2;
+      return true;
+    }
+    final c1 = customPlate.trim().toLowerCase();
+    final c2 = other.customPlate.trim().toLowerCase();
+    if (c1.isEmpty || c2.isEmpty) return false;
+    if (c1 != c2) return false;
+    if (plateType == PlateType.freeZone) {
+      return freeZoneName.trim() == other.freeZoneName.trim();
+    }
     return true;
   }
 
   Map<String, dynamic> toMap() => {
         'id': id,
         'model': model,
+        'plateType': plateTypeToKey(plateType),
         'two': plateTwoDigits,
         'letter': plateLetter,
         'three': plateThreeDigits,
         'prov': plateProvinceCode,
+        'customPlate': customPlate,
+        'freeZoneName': freeZoneName,
         'services': services.map((s) => s.toMap()).toList(),
       };
 
@@ -258,10 +355,13 @@ class Car {
             ? map['id']
             : DateTime.now().microsecondsSinceEpoch.toString(),
         model: map['model'] ?? '',
+        plateType: plateTypeFromKey(map['plateType'] as String?),
         plateTwoDigits: map['two'] ?? '',
         plateLetter: map['letter'] ?? 'ب',
         plateThreeDigits: map['three'] ?? '',
         plateProvinceCode: map['prov'] ?? '',
+        customPlate: map['customPlate'] ?? '',
+        freeZoneName: map['freeZoneName'] ?? '',
         services: (map['services'] as List? ?? []).map((s) => ServiceRecord.fromMap(s)).toList(),
       );
 }
@@ -278,10 +378,10 @@ class Customer {
   }
 
   void updateSearchKey() {
-    final carsStr = cars
-        .map((c) =>
-            '${c.model} ${c.fullPlate} ${c.plateTwoDigits}${c.plateLetter}${c.plateThreeDigits}')
-        .join(' ');
+    final carsStr = cars.map((c) {
+      final noSpace = c.fullPlate.replaceAll(' ', '');
+      return '${c.model} ${c.fullPlate} $noSpace';
+    }).join(' ');
     searchKey = '${name.toLowerCase()} ${phone.replaceAll(' ', '')} $carsStr'.toLowerCase();
   }
 
@@ -366,7 +466,8 @@ class _AutoElectricAppState extends State<AutoElectricApp> {
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: const Color(0xFF131D31),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
+        border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
       ),
     );
   }
@@ -395,7 +496,8 @@ class _AutoElectricAppState extends State<AutoElectricApp> {
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: Colors.white,
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
+        border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
       ),
     );
   }
@@ -963,24 +1065,30 @@ class _HomeScreenState extends State<HomeScreen> {
           Navigator.pop(context);
           _navigateToCustomer(owner);
         },
-        onSave: (model, two, letter, three, prov) {
+        onSave: (model, two, letter, three, prov, plateType, customPlate, freeZoneName) {
           setState(() {
             if (carToEdit == null) {
               customer.cars.add(Car(
                 id: DateTime.now().microsecondsSinceEpoch.toString(),
                 model: model,
+                plateType: plateType,
                 plateTwoDigits: two,
                 plateLetter: letter,
                 plateThreeDigits: three,
                 plateProvinceCode: prov,
+                customPlate: customPlate,
+                freeZoneName: freeZoneName,
                 services: [],
               ));
             } else {
               carToEdit.model = model;
+              carToEdit.plateType = plateType;
               carToEdit.plateTwoDigits = two;
               carToEdit.plateLetter = letter;
               carToEdit.plateThreeDigits = three;
               carToEdit.plateProvinceCode = prov;
+              carToEdit.customPlate = customPlate;
+              carToEdit.freeZoneName = freeZoneName;
             }
             customer.updateSearchKey();
           });
@@ -1158,6 +1266,11 @@ class RealisticPlateBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (car.plateType == PlateType.national) return _buildNationalBadge();
+    return _buildCustomBadge();
+  }
+
+  Widget _buildNationalBadge() {
     return Directionality(
       textDirection: TextDirection.ltr,
       child: Container(
@@ -1223,6 +1336,84 @@ class RealisticPlateBadge extends StatelessWidget {
       ),
     );
   }
+
+  Widget _buildCustomBadge() {
+    late Color bg, borderColor, textColor;
+    late IconData icon;
+    late String label;
+
+    switch (car.plateType) {
+      case PlateType.temporary:
+        bg = Colors.white;
+        borderColor = Colors.red;
+        textColor = Colors.red[800]!;
+        icon = Icons.timer;
+        label = 'گذر موقت';
+        break;
+      case PlateType.freeZone:
+        bg = const Color(0xFFE8F5E9);
+        borderColor = Colors.green[800]!;
+        textColor = Colors.green[900]!;
+        icon = Icons.beach_access;
+        label = car.freeZoneName.isNotEmpty ? car.freeZoneName : 'منطقه آزاد';
+        break;
+      case PlateType.regional:
+        bg = const Color(0xFFFFF3E0);
+        borderColor = Colors.orange[800]!;
+        textColor = Colors.orange[900]!;
+        icon = Icons.place;
+        label = 'منطقه‌ای';
+        break;
+      case PlateType.personal:
+        bg = const Color(0xFFF3E5F5);
+        borderColor = Colors.purple[800]!;
+        textColor = Colors.purple[900]!;
+        icon = Icons.star;
+        label = 'شخصی';
+        break;
+      default:
+        bg = Colors.grey[200]!;
+        borderColor = Colors.grey;
+        textColor = Colors.black;
+        icon = Icons.directions_car;
+        label = '';
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: borderColor, width: 1.5),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 10, color: textColor),
+              const SizedBox(width: 3),
+              Text(label,
+                  style: TextStyle(
+                      color: textColor, fontSize: 8, fontWeight: FontWeight.bold)),
+            ],
+          ),
+          const SizedBox(height: 2),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 110),
+            child: Text(
+              car.customPlate.isNotEmpty ? car.customPlate : 'بدون شماره',
+              style: TextStyle(
+                  color: textColor, fontSize: 11, fontWeight: FontWeight.bold),
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 // ======================== دیالوگ خودرو ========================
@@ -1231,7 +1422,16 @@ class _CarEditDialog extends StatefulWidget {
   final Customer customer;
   final List<Customer> existingCustomers;
   final void Function(Customer owner) onGoToExisting;
-  final Function(String model, String two, String letter, String three, String prov) onSave;
+  final Function(
+    String model,
+    String two,
+    String letter,
+    String three,
+    String prov,
+    PlateType plateType,
+    String customPlate,
+    String freeZoneName,
+  ) onSave;
 
   const _CarEditDialog({
     this.carToEdit,
@@ -1250,8 +1450,11 @@ class _CarEditDialogState extends State<_CarEditDialog> {
   late final TextEditingController twoCtrl;
   late final TextEditingController threeCtrl;
   late final TextEditingController provCtrl;
+  late final TextEditingController customPlateCtrl;
   late String selectedLetter;
   late List<String> _availableLetters;
+  late PlateType _plateType;
+  late String _freeZoneName;
 
   final FocusNode twoFocus = FocusNode();
   final FocusNode threeFocus = FocusNode();
@@ -1264,6 +1467,11 @@ class _CarEditDialogState extends State<_CarEditDialog> {
     twoCtrl = TextEditingController(text: widget.carToEdit?.plateTwoDigits ?? '');
     threeCtrl = TextEditingController(text: widget.carToEdit?.plateThreeDigits ?? '');
     provCtrl = TextEditingController(text: widget.carToEdit?.plateProvinceCode ?? '');
+    customPlateCtrl = TextEditingController(text: widget.carToEdit?.customPlate ?? '');
+    _plateType = widget.carToEdit?.plateType ?? PlateType.national;
+    _freeZoneName = (widget.carToEdit?.freeZoneName.isNotEmpty == true)
+        ? widget.carToEdit!.freeZoneName
+        : kFreeZones.first;
 
     final oldLetter = normalizePlateLetter(widget.carToEdit?.plateLetter ?? '');
     _availableLetters = [...kIranPlateLetters];
@@ -1280,6 +1488,7 @@ class _CarEditDialogState extends State<_CarEditDialog> {
     twoCtrl.dispose();
     threeCtrl.dispose();
     provCtrl.dispose();
+    customPlateCtrl.dispose();
     twoFocus.dispose();
     threeFocus.dispose();
     provFocus.dispose();
@@ -1292,22 +1501,50 @@ class _CarEditDialogState extends State<_CarEditDialog> {
 
   void _trySave({required bool force}) {
     final model = modelCtrl.text.trim();
-    final two = NumberHelper.cleanNumbers(twoCtrl.text);
-    final letter = selectedLetter.trim();
-    final three = NumberHelper.cleanNumbers(threeCtrl.text);
-    final prov = NumberHelper.cleanNumbers(provCtrl.text);
-
     if (model.isEmpty) {
       ScaffoldMessenger.of(context)
           .showSnackBar(const SnackBar(content: Text('لطفاً مدل خودرو را وارد کنید.')));
       return;
     }
 
-    if (!force && two.isNotEmpty && three.isNotEmpty) {
+    final newCar = Car(
+      id: widget.carToEdit?.id ?? 'temp',
+      model: model,
+      plateType: _plateType,
+      plateTwoDigits: NumberHelper.cleanNumbers(twoCtrl.text),
+      plateLetter: selectedLetter.trim(),
+      plateThreeDigits: NumberHelper.cleanNumbers(threeCtrl.text),
+      plateProvinceCode: NumberHelper.cleanNumbers(provCtrl.text),
+      customPlate: customPlateCtrl.text.trim(),
+      freeZoneName: _plateType == PlateType.freeZone ? _freeZoneName : '',
+      services: const [],
+    );
+
+    if (_plateType == PlateType.national) {
+      final hasTwo = newCar.plateTwoDigits.isNotEmpty;
+      final hasThree = newCar.plateThreeDigits.isNotEmpty;
+      if (hasTwo != hasThree) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('پلاک ملی باید هر دو بخش شماره را داشته باشد.')),
+        );
+        return;
+      }
+    } else {
+      if (newCar.customPlate.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+              content: Text(
+                  'لطفاً متن پلاک ${plateTypeLabel(_plateType)} را وارد کنید.')),
+        );
+        return;
+      }
+    }
+
+    if (!force && newCar.hasAnyPlate) {
       for (final cust in widget.existingCustomers) {
         for (final car in cust.cars) {
           if (widget.carToEdit != null && car.id == widget.carToEdit!.id) continue;
-          if (car.matchesPlate(two, letter, three, prov)) {
+          if (car.matchesPlate(newCar)) {
             _showDuplicatePlateDialog(cust, car);
             return;
           }
@@ -1315,7 +1552,16 @@ class _CarEditDialogState extends State<_CarEditDialog> {
       }
     }
 
-    widget.onSave(model, two, letter, three, prov);
+    widget.onSave(
+      model,
+      newCar.plateTwoDigits,
+      newCar.plateLetter,
+      newCar.plateThreeDigits,
+      newCar.plateProvinceCode,
+      newCar.plateType,
+      newCar.customPlate,
+      newCar.freeZoneName,
+    );
     Navigator.pop(context);
   }
 
@@ -1333,9 +1579,10 @@ class _CarEditDialogState extends State<_CarEditDialog> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-                'این پلاک قبلاً برای خودروی «${existingCar.model}» در پرونده «${owner.name}» ثبت شده است.'),
+                'این پلاک (${plateTypeLabel(existingCar.plateType)}) قبلاً برای خودروی «${existingCar.model}» در پرونده «${owner.name}» ثبت شده است.'),
             const SizedBox(height: 10),
-            const Text('می‌خواهید به پرونده‌ی مالک بروید یا پلاک را به‌هرحال ثبت کنید؟',
+            const Text(
+                'می‌خواهید به پرونده‌ی مالک بروید یا پلاک را به‌هرحال ثبت کنید؟',
                 style: TextStyle(fontSize: 12)),
           ],
         ),
@@ -1376,10 +1623,12 @@ class _CarEditDialogState extends State<_CarEditDialog> {
           children: [
             TextField(
               controller: modelCtrl,
-              decoration: const InputDecoration(labelText: 'مدل خودرو (مثلاً: پژو ۲۰۶ سفید)'),
+              decoration: const InputDecoration(
+                  labelText: 'مدل خودرو (مثلاً: پژو ۲۰۶ سفید)'),
             ),
             const SizedBox(height: 8),
-            Text('انتخاب سریع خودرو:', style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant)),
+            Text('انتخاب سریع خودرو:',
+                style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant)),
             const SizedBox(height: 4),
             SingleChildScrollView(
               scrollDirection: Axis.horizontal,
@@ -1396,140 +1645,212 @@ class _CarEditDialogState extends State<_CarEditDialog> {
               ),
             ),
             const SizedBox(height: 14),
-            const Text('شماره پلاک ملی خودرو:',
+            const Text('نوع پلاک:',
                 style: TextStyle(
-                    fontSize: 12, fontWeight: FontWeight.bold, color: Colors.cyanAccent)),
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.cyanAccent)),
             const SizedBox(height: 6),
-            Directionality(
-              textDirection: TextDirection.ltr,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: Colors.amberAccent, width: 2),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: PlateType.values.map((type) {
+                final selected = _plateType == type;
+                return ChoiceChip(
+                  selected: selected,
+                  label: Text(plateTypeLabel(type),
+                      style: TextStyle(
+                          fontSize: 11,
+                          color: selected ? Colors.white : cs.onSurface)),
+                  selectedColor: cs.primary,
+                  onSelected: (_) => setState(() => _plateType = type),
+                );
+              }).toList(),
+            ),
+            const SizedBox(height: 14),
+            if (_plateType == PlateType.national) ...[
+              const Text('شماره پلاک ملی:',
+                  style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.cyanAccent)),
+              const SizedBox(height: 6),
+              _buildNationalPlateInput(cs),
+            ] else if (_plateType == PlateType.freeZone) ...[
+              Row(children: [
+                Expanded(
+                  child: DropdownButtonFormField<String>(
+                    value: _freeZoneName,
+                    decoration: const InputDecoration(labelText: 'منطقه آزاد'),
+                    items: kFreeZones
+                        .map((z) => DropdownMenuItem(value: z, child: Text(z)))
+                        .toList(),
+                    onChanged: (v) =>
+                        setState(() => _freeZoneName = v ?? kFreeZones.first),
+                  ),
                 ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: 22,
-                      height: 48,
-                      decoration: BoxDecoration(
-                          color: const Color(0xFF003399),
-                          borderRadius: BorderRadius.circular(4)),
-                      child: const Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text('🇮🇷', style: TextStyle(fontSize: 8)),
-                          Text('I.R.',
-                              style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 6,
-                                  fontWeight: FontWeight.bold)),
-                          Text('IRAN', style: TextStyle(color: Colors.white, fontSize: 5)),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    SizedBox(
-                      width: 44,
-                      child: TextField(
-                        controller: twoCtrl,
-                        focusNode: twoFocus,
-                        keyboardType: TextInputType.number,
-                        textAlign: TextAlign.center,
-                        maxLength: 2,
-                        inputFormatters: _digitFormatters,
-                        style: const TextStyle(
-                            color: Colors.black, fontWeight: FontWeight.bold, fontSize: 17),
-                        decoration: const InputDecoration(
-                            counterText: '', hintText: '۲۲', border: InputBorder.none),
-                        onChanged: (val) {
-                          if (val.length == 2) FocusScope.of(context).requestFocus(threeFocus);
-                        },
-                      ),
-                    ),
-                    DropdownButton<String>(
-                      value: selectedLetter,
-                      dropdownColor: cs.surfaceContainerHighest,
-                      underline: const SizedBox(),
-                      style: const TextStyle(
-                          color: Colors.blueAccent,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 17),
-                      items: _availableLetters
-                          .map((l) => DropdownMenuItem(value: l, child: Text(l)))
-                          .toList(),
-                      onChanged: (v) =>
-                          setState(() => selectedLetter = v ?? _availableLetters.first),
-                    ),
-                    SizedBox(
-                      width: 58,
-                      child: TextField(
-                        controller: threeCtrl,
-                        focusNode: threeFocus,
-                        keyboardType: TextInputType.number,
-                        textAlign: TextAlign.center,
-                        maxLength: 3,
-                        inputFormatters: _digitFormatters,
-                        style: const TextStyle(
-                            color: Colors.black, fontWeight: FontWeight.bold, fontSize: 17),
-                        decoration: const InputDecoration(
-                            counterText: '', hintText: '۳۶۵', border: InputBorder.none),
-                        onChanged: (val) {
-                          if (val.length == 3) FocusScope.of(context).requestFocus(provFocus);
-                        },
-                      ),
-                    ),
-                    Container(
-                        height: 38,
-                        width: 1.5,
-                        color: Colors.black45,
-                        margin: const EdgeInsets.symmetric(horizontal: 4)),
-                    Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Text('ایران',
-                            style: TextStyle(
-                                color: Colors.black,
-                                fontSize: 10,
-                                fontWeight: FontWeight.bold,
-                                height: 1)),
-                        SizedBox(
-                          width: 38,
-                          height: 32,
-                          child: TextField(
-                            controller: provCtrl,
-                            focusNode: provFocus,
-                            keyboardType: TextInputType.number,
-                            textAlign: TextAlign.center,
-                            maxLength: 2,
-                            inputFormatters: _digitFormatters,
-                            style: const TextStyle(
-                                color: Colors.black,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 15),
-                            decoration: const InputDecoration(
-                                counterText: '',
-                                hintText: '۶۸',
-                                border: InputBorder.none,
-                                isDense: true),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
+                const SizedBox(width: 8),
+                Expanded(
+                  flex: 2,
+                  child: TextField(
+                    controller: customPlateCtrl,
+                    decoration: const InputDecoration(
+                        labelText: 'شماره سریال پلاک',
+                        hintText: 'مثلاً: ۱۲۳۴۵'),
+                  ),
+                ),
+              ]),
+            ] else ...[
+              TextField(
+                controller: customPlateCtrl,
+                decoration: InputDecoration(
+                  labelText: _plateType == PlateType.temporary
+                      ? 'متن کامل پلاک گذر موقت'
+                      : _plateType == PlateType.regional
+                          ? 'متن کامل پلاک منطقه‌ای'
+                          : 'شماره/متن پلاک شخصی',
+                  hintText: _plateType == PlateType.temporary
+                      ? 'مثلاً: ۱۲ گ ۳۴۵ گذر موقت'
+                      : _plateType == PlateType.regional
+                          ? 'مثلاً: مرزی ۱۲۳۴۵'
+                          : 'مثلاً: ۱۲۳۴۵ - الف',
                 ),
               ),
-            ),
+            ],
           ],
         ),
       ),
       actions: [
         TextButton(onPressed: () => Navigator.pop(context), child: const Text('انصراف')),
-        ElevatedButton(onPressed: () => _trySave(force: false), child: const Text('ذخیره')),
+        ElevatedButton(
+            onPressed: () => _trySave(force: false), child: const Text('ذخیره')),
       ],
+    );
+  }
+
+  Widget _buildNationalPlateInput(ColorScheme cs) {
+    return Directionality(
+      textDirection: TextDirection.ltr,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: Colors.amberAccent, width: 2),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 22,
+              height: 48,
+              decoration: BoxDecoration(
+                  color: const Color(0xFF003399),
+                  borderRadius: BorderRadius.circular(4)),
+              child: const Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text('🇮🇷', style: TextStyle(fontSize: 8)),
+                  Text('I.R.',
+                      style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 6,
+                          fontWeight: FontWeight.bold)),
+                  Text('IRAN', style: TextStyle(color: Colors.white, fontSize: 5)),
+                ],
+              ),
+            ),
+            const SizedBox(width: 6),
+            SizedBox(
+              width: 44,
+              child: TextField(
+                controller: twoCtrl,
+                focusNode: twoFocus,
+                keyboardType: TextInputType.number,
+                textAlign: TextAlign.center,
+                maxLength: 2,
+                inputFormatters: _digitFormatters,
+                style: const TextStyle(
+                    color: Colors.black, fontWeight: FontWeight.bold, fontSize: 17),
+                decoration: const InputDecoration(
+                    counterText: '', hintText: '۲۲', border: InputBorder.none),
+                onChanged: (val) {
+                  if (val.length == 2) FocusScope.of(context).requestFocus(threeFocus);
+                },
+              ),
+            ),
+            DropdownButton<String>(
+              value: selectedLetter,
+              dropdownColor: cs.surfaceContainerHighest,
+              underline: const SizedBox(),
+              style: const TextStyle(
+                  color: Colors.blueAccent,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 17),
+              items: _availableLetters
+                  .map((l) => DropdownMenuItem(value: l, child: Text(l)))
+                  .toList(),
+              onChanged: (v) =>
+                  setState(() => selectedLetter = v ?? _availableLetters.first),
+            ),
+            SizedBox(
+              width: 58,
+              child: TextField(
+                controller: threeCtrl,
+                focusNode: threeFocus,
+                keyboardType: TextInputType.number,
+                textAlign: TextAlign.center,
+                maxLength: 3,
+                inputFormatters: _digitFormatters,
+                style: const TextStyle(
+                    color: Colors.black, fontWeight: FontWeight.bold, fontSize: 17),
+                decoration: const InputDecoration(
+                    counterText: '', hintText: '۳۶۵', border: InputBorder.none),
+                onChanged: (val) {
+                  if (val.length == 3) FocusScope.of(context).requestFocus(provFocus);
+                },
+              ),
+            ),
+            Container(
+                height: 38,
+                width: 1.5,
+                color: Colors.black45,
+                margin: const EdgeInsets.symmetric(horizontal: 4)),
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('ایران',
+                    style: TextStyle(
+                        color: Colors.black,
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        height: 1)),
+                SizedBox(
+                  width: 38,
+                  height: 32,
+                  child: TextField(
+                    controller: provCtrl,
+                    focusNode: provFocus,
+                    keyboardType: TextInputType.number,
+                    textAlign: TextAlign.center,
+                    maxLength: 2,
+                    inputFormatters: _digitFormatters,
+                    style: const TextStyle(
+                        color: Colors.black,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 15),
+                    decoration: const InputDecoration(
+                        counterText: '',
+                        hintText: '۶۸',
+                        border: InputBorder.none,
+                        isDense: true),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

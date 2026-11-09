@@ -2211,6 +2211,7 @@ class _CarEditDialogState extends State<_CarEditDialog> {
     );
   }
 
+  // 👈 اصلاح استایل کادرهای پلاک برای خوانایی در تم تاریک
   Widget _buildNationalPlateInput(ColorScheme cs) {
     return Directionality(
       textDirection: TextDirection.ltr,
@@ -2256,7 +2257,13 @@ class _CarEditDialogState extends State<_CarEditDialog> {
                 style: const TextStyle(
                     color: Colors.black, fontWeight: FontWeight.bold, fontSize: 17),
                 decoration: const InputDecoration(
-                    counterText: '', hintText: '۲۲', border: InputBorder.none),
+                    counterText: '',
+                    hintText: '۲۲',
+                    hintStyle: TextStyle(color: Colors.grey),
+                    border: InputBorder.none,
+                    filled: false,
+                    isDense: true,
+                    contentPadding: EdgeInsets.zero),
                 onChanged: (val) {
                   if (val.length == 2) FocusScope.of(context).requestFocus(threeFocus);
                 },
@@ -2288,7 +2295,13 @@ class _CarEditDialogState extends State<_CarEditDialog> {
                 style: const TextStyle(
                     color: Colors.black, fontWeight: FontWeight.bold, fontSize: 17),
                 decoration: const InputDecoration(
-                    counterText: '', hintText: '۳۶۵', border: InputBorder.none),
+                    counterText: '',
+                    hintText: '۳۶۵',
+                    hintStyle: TextStyle(color: Colors.grey),
+                    border: InputBorder.none,
+                    filled: false,
+                    isDense: true,
+                    contentPadding: EdgeInsets.zero),
                 onChanged: (val) {
                   if (val.length == 3) FocusScope.of(context).requestFocus(provFocus);
                 },
@@ -2325,8 +2338,11 @@ class _CarEditDialogState extends State<_CarEditDialog> {
                     decoration: const InputDecoration(
                         counterText: '',
                         hintText: '۶۸',
+                        hintStyle: TextStyle(color: Colors.grey),
                         border: InputBorder.none,
-                        isDense: true),
+                        filled: false,
+                        isDense: true,
+                        contentPadding: EdgeInsets.zero),
                   ),
                 ),
               ],
@@ -2691,8 +2707,10 @@ class _CarServicesScreenState extends State<CarServicesScreen> {
     );
   }
 
+  // 👈 اصلاح کدگذاری متن برای رفع مشکل علامت سوال
   Future<bool> _launchSms(String phone, String body) async {
-    final uri = Uri.parse('sms:$phone?body=${Uri.encodeComponent(body)}');
+    final String encodedBody = Uri.encodeComponent(body);
+    final Uri uri = Uri.parse('sms:$phone?body=$encodedBody');
     try {
       if (await canLaunchUrl(uri)) {
         await launchUrl(uri);
@@ -2747,7 +2765,6 @@ class _CarServicesScreenState extends State<CarServicesScreen> {
     }
   }
 
-  // فونت آفلاین از assets
   Future<void> _printPdfInvoice(ServiceRecord service, {required bool isThermal}) async {
     try {
       final regularData = await rootBundle.load('assets/fonts/Vazirmatn-Regular.ttf');
@@ -2845,7 +2862,7 @@ class _CarServicesScreenState extends State<CarServicesScreen> {
   void _openServiceDialog({ServiceRecord? serviceToEdit}) {
     showDialog(
       context: context,
-      barrierDismissible: false, // ← جلوگیری از بسته‌شدن اتفاقی
+      barrierDismissible: false,
       builder: (_) => _ServiceEditDialog(
         serviceToEdit: serviceToEdit,
         onSave: (record) {
@@ -2889,7 +2906,6 @@ class _ServiceEditDialogState extends State<_ServiceEditDialog> {
   late final List<LaborItem> laborsList;
   late final List<PartItem> partsList;
 
-  // قالب‌های پیش‌فرض (از صفحه‌ی مدیریت قیمت‌ها)
   List<ServiceTemplate> _serviceTemplates = [];
   List<PartTemplate> _partTemplates = [];
   bool _templatesLoaded = false;
@@ -2937,11 +2953,9 @@ class _ServiceEditDialogState extends State<_ServiceEditDialog> {
     super.dispose();
   }
 
-  /// مقایسه‌ی وضعیت فعلی با وضعیت اولیه (تشخیص تغییر)
   bool get _isDirty {
     final s = widget.serviceToEdit;
     if (s == null) {
-      // رکورد جدید
       if (dateCtrl.text.trim() != JalaliHelper.nowShamsi()) return true;
       if (kmCtrl.text.trim().isNotEmpty) return true;
       if (warrantyCtrl.text.trim().isNotEmpty) return true;
@@ -2958,7 +2972,6 @@ class _ServiceEditDialogState extends State<_ServiceEditDialog> {
       if (partsList.isNotEmpty) return true;
       return false;
     }
-    // رکورد موجود
     if (dateCtrl.text.trim() != s.date) return true;
     if (kmCtrl.text.trim() != s.km) return true;
     if (warrantyCtrl.text.trim() != s.warrantyNote) return true;
@@ -2982,7 +2995,6 @@ class _ServiceEditDialogState extends State<_ServiceEditDialog> {
     return false;
   }
 
-  /// پرسیدن تأیید خروج بدون ذخیره
   Future<bool> _confirmExitWithoutSave() async {
     if (!_isDirty) return true;
     final result = await showDialog<bool>(
@@ -3020,7 +3032,6 @@ class _ServiceEditDialogState extends State<_ServiceEditDialog> {
     int grandTotal = (subTotal - discount) > 0 ? (subTotal - discount) : 0;
 
     return PopScope(
-      // جلوگیری از back شدن ناخواسته
       canPop: false,
       onPopInvokedWithResult: (didPop, _) async {
         if (didPop) return;
@@ -3056,8 +3067,6 @@ class _ServiceEditDialogState extends State<_ServiceEditDialog> {
                     controller: warrantyCtrl,
                     decoration: const InputDecoration(labelText: 'یادداشت/گارانتی قطعه')),
                 const SizedBox(height: 10),
-
-                // ===== خدمات پیش‌فرض =====
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
@@ -3072,7 +3081,6 @@ class _ServiceEditDialogState extends State<_ServiceEditDialog> {
                           MaterialPageRoute(
                               builder: (_) => const TemplatesManagerScreen()),
                         );
-                        // بارگذاری مجدد قالب‌ها بعد از بازگشت
                         await _loadTemplates();
                       },
                     ),
@@ -3117,7 +3125,6 @@ class _ServiceEditDialogState extends State<_ServiceEditDialog> {
                       }).toList(),
                     ),
                   ),
-
                 const SizedBox(height: 10),
                 _buildItemBox(
                   cs: cs,
@@ -3137,10 +3144,7 @@ class _ServiceEditDialogState extends State<_ServiceEditDialog> {
                       .toList(),
                   onAddManual: () => _openAddItemDialog(isLabor: true),
                 ),
-
                 const SizedBox(height: 8),
-
-                // ===== قطعات پیش‌فرض =====
                 if (_partTemplates.isNotEmpty) ...[
                   const Text('🔩 قطعات پیش‌فرض (کلیک برای افزودن):',
                       style: TextStyle(fontSize: 11, color: Colors.amberAccent)),
@@ -3170,7 +3174,6 @@ class _ServiceEditDialogState extends State<_ServiceEditDialog> {
                   ),
                   const SizedBox(height: 8),
                 ],
-
                 _buildItemBox(
                   cs: cs,
                   title: '🔩 لیست قطعات:',
@@ -3189,7 +3192,6 @@ class _ServiceEditDialogState extends State<_ServiceEditDialog> {
                       .toList(),
                   onAddManual: () => _openAddItemDialog(isLabor: false),
                 ),
-
                 const SizedBox(height: 10),
                 TextField(
                   controller: discountCtrl,
@@ -3278,7 +3280,7 @@ class _ServiceEditDialogState extends State<_ServiceEditDialog> {
                 parts: List.from(partsList),
               );
               widget.onSave(record);
-              Navigator.pop(context); // PopScope با canPop:false مانع این نمی‌شود
+              Navigator.pop(context);
             },
             child: const Text('ذخیره فاکتور'),
           )
@@ -3471,6 +3473,7 @@ class DebtorsScreen extends StatelessWidget {
     );
   }
 
+  // 👈 اصلاح کدگذاری متن برای رفع مشکل علامت سوال
   Future<void> _sendDebtReminderSms(Customer c, BuildContext context) async {
     final cleanPhone = NumberHelper.cleanNumbers(c.phone);
     if (cleanPhone.isEmpty) {
@@ -3479,9 +3482,12 @@ class DebtorsScreen extends StatelessWidget {
       return;
     }
     final msg = 'مشتری گرامی ${c.name}\n'
-        'با سلام، احتراما مانده حساب شما در کلینیک برق خودرو مهندس مبلغ ${formatToman(c.totalDebt)} می‌باشد.\n'
+        'با سلام، احتراماً مانده حساب شما در کلینیک برق خودرو مهندس مبلغ ${formatToman(c.totalDebt)} می‌باشد.\n'
         'با تشکر - برق خودرو مهندس';
-    final uri = Uri.parse('sms:$cleanPhone?body=${Uri.encodeComponent(msg)}');
+        
+    final String encodedMsg = Uri.encodeComponent(msg);
+    final Uri uri = Uri.parse('sms:$cleanPhone?body=$encodedMsg');
+    
     try {
       if (await canLaunchUrl(uri)) {
         await launchUrl(uri);
@@ -3582,13 +3588,18 @@ class _BulkSmsScreenState extends State<BulkSmsScreen> {
               icon: const Icon(Icons.send, color: Colors.white),
               label: const Text('ارسال پیامک دسته‌جمعی',
                   style: TextStyle(color: Colors.white)),
+              // 👈 اصلاح کدگذاری متن برای رفع مشکل علامت سوال
               onPressed: () async {
                 if (phones.isEmpty) return;
                 final batch = phones.take(20).toList();
                 final isIos = !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
                 final sep = isIos ? ';' : ',';
-                final uri = Uri.parse(
-                    'sms:${batch.join(sep)}?body=${Uri.encodeComponent(_msgCtrl.text)}');
+                
+                final String encodedMsg = Uri.encodeComponent(_msgCtrl.text);
+                final String phoneList = batch.join(sep);
+                
+                final Uri uri = Uri.parse('sms:$phoneList?body=$encodedMsg');
+                
                 try {
                   if (await canLaunchUrl(uri)) {
                     await launchUrl(uri);

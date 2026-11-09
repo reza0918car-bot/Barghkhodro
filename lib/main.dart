@@ -1267,16 +1267,18 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  Future<void> _pickAndRestoreBackupFile(BuildContext context) async {
+   Future<void> _pickAndRestoreBackupFile(BuildContext context) async {
     try {
-      FilePickerResult? result = await FilePicker.platform.pickFiles(
+      // 👈 کد اصلاح شده برای نسخه جدید پکیج
+      List<PlatformFile>? result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
         allowedExtensions: ['json'],
       );
 
-      if (result == null) return; 
+      // اگر کاربر فایلی انتخاب نکرد و انصراف داد
+      if (result == null || result.isEmpty) return; 
 
-      PlatformFile file = result.files.first;
+      PlatformFile file = result.first;
       String filePath = file.path!;
 
       final fileContent = await File(filePath).readAsString(encoding: utf8);
@@ -1336,7 +1338,6 @@ class _HomeScreenState extends State<HomeScreen> {
       }
     }
   }
-}
 
 // ======================== صفحه مدیریت قیمت‌ها ========================
 class TemplatesManagerScreen extends StatefulWidget {

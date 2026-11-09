@@ -1268,15 +1268,13 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-   Future<void> _pickAndRestoreBackupFile(BuildContext context) async {
+  Future<void> _pickAndRestoreBackupFile(BuildContext context) async {
     try {
-      // 👈 کد اصلاح شده برای نسخه جدید پکیج
       List<PlatformFile>? result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
         allowedExtensions: ['json'],
       );
 
-      // اگر کاربر فایلی انتخاب نکرد و انصراف داد
       if (result == null || result.isEmpty) return; 
 
       PlatformFile file = result.first;
@@ -1339,6 +1337,7 @@ class _HomeScreenState extends State<HomeScreen> {
       }
     }
   }
+}
 
 // ======================== صفحه مدیریت قیمت‌ها ========================
 class TemplatesManagerScreen extends StatefulWidget {

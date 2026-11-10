@@ -2897,7 +2897,7 @@ class _ServiceEditDialogState extends State<_ServiceEditDialog> {
     warrantyCtrl = TextEditingController(text: s?.warrantyNote ?? '');
     discountCtrl =
         TextEditingController(text: s != null && s.discount > 0 ? s.discount.toString() : '');
-    paidCtrl = TextEditingController(text: s != null ? s.paidAmount.toString() : '');
+    paidCtrl = TextEditingController(text: s != null ? s.paidAmount.toString() : '0');
     paymentMethod = s?.paymentMethod ?? 'کارت‌خوان (POS)';
     laborsList = s != null
         ? s.labors.map((l) => LaborItem(title: l.title, cost: l.cost)).toList()
@@ -3243,6 +3243,16 @@ class _ServiceEditDialogState extends State<_ServiceEditDialog> {
                 return;
               }
               final enteredPaid = NumberHelper.safeParseInt(paidCtrl.text);
+              if (enteredPaid > grandTotal) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('خطا: مبلغ دریافتی نمی‌تواند بیشتر از جمع کل قابل پرداخت باشد!'),
+          backgroundColor: Colors.redAccent,
+          duration: Duration(seconds: 3),
+        ),
+      );
+      return; // جلوگیری از ذخیره شدن فاکتور
+              }
               final record = ServiceRecord(
                 id: widget.serviceToEdit?.id ??
                     DateTime.now().microsecondsSinceEpoch.toString(),

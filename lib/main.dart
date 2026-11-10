@@ -3288,7 +3288,7 @@ class _ServiceEditDialogState extends State<_ServiceEditDialog> {
             child: const Text('انصراف'),
           ),
           ElevatedButton(
-            onPressed: () {
+            onPressed: () async {
               if (laborsList.isEmpty && partsList.isEmpty) {
                 ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(content: Text('حداقل یک خدمت یا قطعه ثبت کنید.')));

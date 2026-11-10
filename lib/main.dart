@@ -2728,12 +2728,22 @@ class _CarServicesScreenState extends State<CarServicesScreen> {
     );
     
     // 👈 پیام خطا هم متناسب با ارسال پس‌زمینه تغییر کرد
-    if (!ok && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('خطا در ارسال پیامک. لطفاً مجوز ارسال پیامک را بررسی کنید.'),
-            backgroundColor: Colors.redAccent),
-      );
+    if (mounted) {
+      if (ok) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('پیامک تحویل خودرو با موفقیت ارسال شد.'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 3),
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content: Text('خطا در ارسال پیامک. لطفاً مجوز ارسال پیامک را بررسی کنید.'),
+              backgroundColor: Colors.redAccent),
+        );
+      }
     }
   }
 
@@ -3470,14 +3480,24 @@ class DebtorsScreen extends StatelessWidget {
       phoneNumber: cleanPhone,
       message: msg,);
     
-    if (!ok && context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('خطا در ارسال پیامک. لطفاً مجوز ارسال پیامک را بررسی کنید.'),
-            backgroundColor: Colors.redAccent),);
-        
+    if (context.mounted) {
+      if (ok) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('پیامک یادآوری بدهی با موفقیت ارسال شد.'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 3),
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content: Text('خطا در ارسال پیامک. لطفاً مجوز ارسال پیامک را بررسی کنید.'),
+              backgroundColor: Colors.redAccent),
+        );
       }
     }
+   }
   }
 
 
@@ -3565,24 +3585,59 @@ class _BulkSmsScreenState extends State<BulkSmsScreen> {
               icon: const Icon(Icons.send, color: Colors.white),
               label: const Text('ارسال پیامک دسته‌جمعی',
                   style: TextStyle(color: Colors.white)),
-              onPressed: () async {
-                if (phones.isEmpty) return;
-                final batch = phones.take(20).toList();
+               onPressed: () async {
+                if (phones.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('هیچ شماره‌ای برای ارسال وجود ندارد!')));
+                  return;
+                }
+                
+                // 👈 تغییر اصلی: برداشتن محدودیت ۲۰ نفر
+                final batch = phones.toList(); 
                 final msgText = _msgCtrl.text;
 
+                // نمایش پیام در حال ارسال
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('در حال ارسال پیامک به ${batch.length} شماره... لطفاً صبر کنید.'),
+                    duration: const Duration(seconds: 3),
+                  ),
+                );
+
                 int successCount = 0;
+                // ارسال پیامک به همه شماره‌ها یکی‌یکی
                 for (final phone in batch) {
                   final ok = await SmsHelper.sendSms(
                     phoneNumber: phone,
                     message: msgText,
                   );
                   if (ok) successCount++;
+                  
+                  // 👈 یک وقفه نیم‌ثانیه‌ای برای جلوگیری از مسدود شدن توسط اندروید
+                  await Future.delayed(const Duration(milliseconds: 500)); 
                 }
 
+                // نمایش نتیجه نهایی
                 if (context.mounted) {
+                  Color snackColor;
+                  String msg;
+                  
+                  if (successCount == batch.length) {
+                    snackColor = Colors.green;
+                    msg = '✅ پیامک برای هر ${batch.length} شماره با موفقیت ارسال شد.';
+                  } else if (successCount > 0) {
+                    snackColor = Colors.orange;
+                    msg = '⚠️ پیامک برای $successCount شماره از ${batch.length} شماره ارسال شد. (برخی خطا داشتند)';
+                  } else {
+                    snackColor = Colors.redAccent;
+                    msg = '❌ خطا در ارسال پیامک! لطفاً مجوز برنامه یا اعتبار سیم‌کارت را بررسی کنید.';
+                  }
+
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
-                      content: Text('پیامک برای $successCount شماره از ${batch.length} شماره با موفقیت ارسال شد.'),
+                      content: Text(msg, style: const TextStyle(fontWeight: FontWeight.bold)),
+                      backgroundColor: snackColor,
+                      duration: const Duration(seconds: 5),
                     ),
                   );
                 }
@@ -3603,11 +3658,12 @@ class _BulkSmsScreenState extends State<BulkSmsScreen> {
                     ]),
                     const SizedBox(height: 8),
                     Text(
-                      '• پیامک از اپلیکیشن پیش‌فرض گوشی شما ارسال می‌شود.\n'
-                      '• در اندروید تا ۲۰ شماره در یک پیامک، در iOS با جداکننده‌ی ";".\n'
-                      '• برای ارسال انبوه واقعی از پنل‌های SMS استفاده کنید.',
+                      '• پیامک‌ها به صورت خودکار در پس‌زمینه و بدون نیاز به باز کردن اپلیکیشن پیامک ارسال می‌شوند.\n'
+                      '• این سیستم محدودیتی برای تعداد شماره‌ها ندارد و پیامک به تمام مخاطبین لیست ارسال می‌شود.\n'
+                      '• توجه: سیستم‌عامل اندروید برای جلوگیری از هرزنامه، ممکن است در ارسال‌های خیلی زیاد (مثلاً بیش از ۳۰ پیامک در نیم ساعت) محدودیت موقت اعمال کند.',
                       style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant, height: 1.6),
                     ),
+                    
                   ],
                 ),
               ),

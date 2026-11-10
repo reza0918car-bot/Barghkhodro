@@ -3183,7 +3183,7 @@ class _ServiceEditDialogState extends State<_ServiceEditDialog> {
                                 t.quantity -= 1;
                                 partsList.add(PartItem(name: t.name, price: t.price));
                               });
-                              await TemplatesRepository.saveParts(_partTemplates);
+                              
                             },
                           ),
                         );
@@ -3303,11 +3303,12 @@ class _ServiceEditDialogState extends State<_ServiceEditDialog> {
                 warrantyNote: warrantyCtrl.text.trim(),
                 paymentMethod: paymentMethod,
                 discount: discount,
-                paidAmount: paidCtrl.text.isEmpty ? grandTotal : enteredPaid,
+                paidAmount: enteredPaid,
                 labors: List.from(laborsList),
                 parts: List.from(partsList),
               );
               widget.onSave(record);
+              await TemplatesRepository.saveParts(_partTemplates);
               Navigator.pop(context);
             },
             child: const Text('ذخیره فاکتور'),

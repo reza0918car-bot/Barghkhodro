@@ -186,10 +186,17 @@ class ServiceTemplate {
 class PartTemplate {
   String name;
   int price;
-  PartTemplate({required this.name, required this.price});
-  Map<String, dynamic> toMap() => {'name': name, 'price': price};
-  factory PartTemplate.fromMap(Map<String, dynamic> m) =>
-      PartTemplate(name: m['name'] ?? '', price: m['price'] ?? 0);
+  int quantity; // 👈 فیلد موجودی اضافه شد
+  
+  PartTemplate({required this.name, required this.price, this.quantity = 0});
+  
+  Map<String, dynamic> toMap() => {'name': name, 'price': price, 'quantity': quantity};
+  
+  factory PartTemplate.fromMap(Map<String, dynamic> m) => PartTemplate(
+    name: m['name'] ?? '', 
+    price: m['price'] ?? 0,
+    quantity: m['quantity'] ?? 0, // سازگاری با داده‌های قدیمی
+  );
 }
 
 class TemplatesRepository {
@@ -1394,7 +1401,7 @@ class _TemplatesManagerScreenState extends State<TemplatesManagerScreen>
       priceLabel: 'اجرت (تومان)',
       initialName: '',
       initialPrice: 0,
-      onSave: (name, price) async {
+      onSave: (name, price, quantity) async {
         setState(() => _services.add(ServiceTemplate(title: name, cost: price)));
         await _saveServices();
       },
@@ -1409,7 +1416,7 @@ class _TemplatesManagerScreenState extends State<TemplatesManagerScreen>
       priceLabel: 'اجرت (تومان)',
       initialName: s.title,
       initialPrice: s.cost,
-      onSave: (name, price) async {
+      onSave: (name, price, quantity) async {
         setState(() {
           s.title = name;
           s.cost = price;
@@ -1441,21 +1448,22 @@ class _TemplatesManagerScreenState extends State<TemplatesManagerScreen>
     );
   }
 
-  void _addPart() {
+    void _addPart() {
     _openEditDialog(
       title: 'افزودن قطعه',
       nameLabel: 'نام قطعه',
       priceLabel: 'قیمت (تومان)',
       initialName: '',
       initialPrice: 0,
-      onSave: (name, price) async {
-        setState(() => _parts.add(PartTemplate(name: name, price: price)));
+      initialQuantity: 0, // 👈 مقدار اولیه موجودی
+      onSave: (name, price, quantity) async {
+        setState(() => _parts.add(PartTemplate(name: name, price: price, quantity: quantity)));
         await _saveParts();
       },
     );
   }
 
-  void _editPart(int index) {
+    void _editPart(int index) {
     final p = _parts[index];
     _openEditDialog(
       title: 'ویرایش قطعه',
@@ -1463,10 +1471,12 @@ class _TemplatesManagerScreenState extends State<TemplatesManagerScreen>
       priceLabel: 'قیمت (تومان)',
       initialName: p.name,
       initialPrice: p.price,
-      onSave: (name, price) async {
+      initialQuantity: p.quantity, // 👈 ارسال موجودی فعلی
+      onSave: (name, price, quantity) async {
         setState(() {
           p.name = name;
           p.price = price;
+          p.quantity = quantity;
         });
         await _saveParts();
       },
@@ -1519,17 +1529,19 @@ class _TemplatesManagerScreenState extends State<TemplatesManagerScreen>
     );
   }
 
-  void _openEditDialog({
+    void _openEditDialog({
     required String title,
     required String nameLabel,
     required String priceLabel,
     required String initialName,
     required int initialPrice,
-    required Future<void> Function(String name, int price) onSave,
+    int? initialQuantity, // 👈 اگر نال باشد، فیلد تعداد نمایش داده نمی‌شود
+    required Future<void> Function(String name, int price, int quantity) onSave,
   }) {
     final nameCtrl = TextEditingController(text: initialName);
-    final priceCtrl =
-        TextEditingController(text: initialPrice > 0 ? initialPrice.toString() : '');
+    final priceCtrl = TextEditingController(text: initialPrice > 0 ? initialPrice.toString() : '');
+    final qtyCtrl = TextEditingController(text: initialQuantity != null ? initialQuantity.toString() : '');
+
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -1546,11 +1558,18 @@ class _TemplatesManagerScreenState extends State<TemplatesManagerScreen>
               TextField(
                 controller: priceCtrl,
                 keyboardType: TextInputType.number,
-                inputFormatters: [
-                  FilteringTextInputFormatter.allow(RegExp(r'[0-9۰-۹٠-٩]'))
-                ],
+                inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9۰-۹٠-٩]'))],
                 decoration: InputDecoration(labelText: priceLabel),
               ),
+              if (initialQuantity != null) ...[
+                const SizedBox(height: 8),
+                TextField(
+                  controller: qtyCtrl,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9۰-۹٠-٩]'))],
+                  decoration: const InputDecoration(labelText: 'موجودی انبار (تعداد)'),
+                ),
+              ],
             ],
           ),
         ),
@@ -1566,8 +1585,9 @@ class _TemplatesManagerScreenState extends State<TemplatesManagerScreen>
                 return;
               }
               final price = NumberHelper.safeParseInt(priceCtrl.text);
+              final qty = initialQuantity != null ? NumberHelper.safeParseInt(qtyCtrl.text) : 0;
               Navigator.pop(ctx);
-              await onSave(name, price);
+              await onSave(name, price, qty);
             },
             child: const Text('ذخیره'),
           ),
@@ -1576,6 +1596,7 @@ class _TemplatesManagerScreenState extends State<TemplatesManagerScreen>
     ).whenComplete(() {
       nameCtrl.dispose();
       priceCtrl.dispose();
+      qtyCtrl.dispose();
     });
   }
 
@@ -1702,8 +1723,10 @@ class _TemplatesManagerScreenState extends State<TemplatesManagerScreen>
             ),
             title: Text(p.name,
                 style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-            subtitle: Text(formatToman(p.price),
-                style: const TextStyle(fontSize: 12, color: Colors.greenAccent)),
+                subtitle: Text(
+              '${formatToman(p.price)}  |  موجودی: ${p.quantity} عدد',
+              style: const TextStyle(fontSize: 12, color: Colors.greenAccent),
+            ),
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -3127,7 +3150,7 @@ class _ServiceEditDialogState extends State<_ServiceEditDialog> {
                   onAddManual: () => _openAddItemDialog(isLabor: true),
                 ),
                 const SizedBox(height: 8),
-                if (_partTemplates.isNotEmpty) ...[
+                                if (_partTemplates.isNotEmpty) ...[
                   const Text('🔩 قطعات پیش‌فرض (کلیک برای افزودن):',
                       style: TextStyle(fontSize: 11, color: Colors.amberAccent)),
                   const SizedBox(height: 4),
@@ -3140,14 +3163,27 @@ class _ServiceEditDialogState extends State<_ServiceEditDialog> {
                           child: ActionChip(
                             backgroundColor: cs.surfaceContainerHighest,
                             side: BorderSide(color: cs.outline),
-                            avatar: const Icon(Icons.add, size: 14,
-                                color: Colors.amberAccent),
-                            label: Text('${t.name}',
-                                style: const TextStyle(fontSize: 11)),
-                            onPressed: () {
+                            avatar: const Icon(Icons.add, size: 14, color: Colors.amberAccent),
+                            // 👈 نمایش تعداد موجودی در کنار نام قطعه
+                            label: Text('${t.name} (${t.quantity})', style: const TextStyle(fontSize: 11)),
+                            onPressed: () async {
+                              // 👈 بررسی موجودی
+                              if (t.quantity <= 0) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text('موجودی قطعه "${t.name}" به پایان رسیده است!'),
+                                    backgroundColor: Colors.redAccent,
+                                  ),
+                                );
+                                return;
+                              }
+                              
+                              // کم کردن از موجودی و ذخیره
                               setState(() {
+                                t.quantity -= 1;
                                 partsList.add(PartItem(name: t.name, price: t.price));
                               });
+                              await TemplatesRepository.saveParts(_partTemplates);
                             },
                           ),
                         );

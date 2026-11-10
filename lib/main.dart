@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'sms_helper.dart';
 
 import 'package:cross_file/cross_file.dart';
 import 'package:file_picker/file_picker.dart';
@@ -15,7 +16,7 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:url_launcher/url_launcher.dart';
+//import 'package:url_launcher/url_launcher.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -2698,7 +2699,7 @@ class _CarServicesScreenState extends State<CarServicesScreen> {
     return false;
   }
 
-  Future<void> _sendSmsNotification(ServiceRecord s) async {
+    Future<void> _sendSmsNotification(ServiceRecord s) async {
     final cleanPhone = NumberHelper.cleanNumbers(widget.customer.phone);
     if (cleanPhone.isEmpty) {
       ScaffoldMessenger.of(context)
@@ -2708,8 +2709,7 @@ class _CarServicesScreenState extends State<CarServicesScreen> {
 
     final b = StringBuffer();
     b.writeln('مشتری گرامی ${widget.customer.name}');
-    b.writeln('خودروی ${widget.car.model} (${widget.car.fullPlate}) آماده تحویل است.');
-    b.writeln('--------------------');
+    b.writeln('خودروی ${widget.car.model} (${widget.car.fullPlate}).');
     if (s.labors.isNotEmpty) {
       b.writeln('🔧 خدمات انجام شده:');
       for (final l in s.labors) {
@@ -2723,21 +2723,26 @@ class _CarServicesScreenState extends State<CarServicesScreen> {
         b.writeln('• ${p.name}: ${formatToman(p.price)}');
       }
     }
-    b.writeln('--------------------');
     b.writeln('💰 جمع کل: ${formatToman(s.grandTotal)}');
     if (s.discount > 0) b.writeln('🎁 تخفیف: ${formatToman(s.discount)}');
     b.writeln('💳 پرداختی: ${formatToman(s.paidAmount)}');
     if (s.remainingDebt > 0) {
       b.writeln('⚠️ مانده حساب (بدهی): ${formatToman(s.remainingDebt)}');
     }
-    if (s.warrantyNote.isNotEmpty) b.writeln('🛡 گارانتی: ${s.warrantyNote}');
-    b.writeln('⚡ کلینیک برق خودرو مهندس');
+    if (s.warrantyNote.isNotEmpty) b.writeln('🛡 : ${s.warrantyNote}');
+    b.writeln('⚡ ۰۹۱۸۹۱۶۲۹۳۹ کلینیک برق خودرو مهندس');
 
-    final ok = await _launchSms(cleanPhone, b.toString());
+    // 👈 تغییر اصلی اینجاست: استفاده از SmsHelper به جای _launchSms
+    final ok = await SmsHelper.sendSms(
+      phoneNumber: cleanPhone,
+      message: b.toString(),
+    );
+    
+    // 👈 پیام خطا هم متناسب با ارسال پس‌زمینه تغییر کرد
     if (!ok && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-            content: Text('امکان باز کردن اپلیکیشن پیامک نیست.'),
+            content: Text('خطا در ارسال پیامک. لطفاً مجوز ارسال پیامک را بررسی کنید.'),
             backgroundColor: Colors.redAccent),
       );
     }
@@ -3472,20 +3477,16 @@ class DebtorsScreen extends StatelessWidget {
         'با سلام، احتراماً مانده حساب شما در کلینیک برق خودرو مهندس مبلغ ${formatToman(c.totalDebt)} می‌باشد.\n'
         'با تشکر - برق خودرو مهندس';
 
-    final String encodedMsg = Uri.encodeComponent(msg);
-    final Uri uri = Uri.parse('sms:$cleanPhone?body=$encodedMsg');
-
-    try {
-      if (await canLaunchUrl(uri)) {
-        await launchUrl(uri);
-      } else if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('امکان باز کردن اپلیکیشن پیامک نیست.')));
-      }
-    } catch (_) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('خطا در ارسال پیامک')));
+    final ok = await SmsHelper.sendSms(
+      phoneNumber: cleanPhone,
+      message: msg,);
+    
+    if (!ok && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text('خطا در ارسال پیامک. لطفاً مجوز ارسال پیامک را بررسی کنید.'),
+            backgroundColor: Colors.redAccent),);
+        
       }
     }
   }
@@ -3578,36 +3579,23 @@ class _BulkSmsScreenState extends State<BulkSmsScreen> {
               onPressed: () async {
                 if (phones.isEmpty) return;
                 final batch = phones.take(20).toList();
-                final isIos = !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
-                final sep = isIos ? ';' : ',';
+                final msgText = _msgCtrl.text;
 
-                final String encodedMsg = Uri.encodeComponent(_msgCtrl.text);
-                final String phoneList = batch.join(sep);
+                int successCount = 0;
+                for (final phone in batch) {
+                  final ok = await SmsHelper.sendSms(
+                    phoneNumber: phone,
+                    message: msgText,
+                  );
+                  if (ok) successCount++;
+                }
 
-                final Uri uri = Uri.parse('sms:$phoneList?body=$encodedMsg');
-
-                try {
-                  if (await canLaunchUrl(uri)) {
-                    await launchUrl(uri);
-                    if (phones.length > 20 && context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                            content: Text(
-                                'فقط ۲۰ شماره اول ارسال شد (از ${phones.length} شماره). برای بقیه دوباره بزنید.')),
-                      );
-                    }
-                  } else if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('امکان باز کردن اپلیکیشن پیامک نیست.')));
-                  }
-                } catch (_) {
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                          content: Text('خطا در باز کردن اپلیکیشن پیامک'),
-                          backgroundColor: Colors.redAccent),
-                    );
-                  }
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('پیامک برای $successCount شماره از ${batch.length} شماره با موفقیت ارسال شد.'),
+                    ),
+                  );
                 }
               },
             ),

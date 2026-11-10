@@ -51,38 +51,21 @@ jobs:
              sed -i 's/minSdkVersion flutter.minSdkVersion/minSdkVersion 23/' android/app/build.gradle
           fi
 
-          # ۵. رفع مشکل Namespace پلاگین‌ها (نسخه اصلاح‌شده و بدون خطا)
-          echo "Patching android/build.gradle for namespace..."
-          if [ -f "android/build.gradle" ]; then
-            cat << 'EOF' >> android/build.gradle
-
-          subprojects {
-              afterEvaluate { project ->
-                  if (project.hasProperty('android')) {
-                      project.android {
-                          if (namespace == null) {
-                              namespace project.group
-                          }
-                      }
-                  }
-              }
-          }
-          EOF
-          fi
-          
+          # ۵. 👈 رفع مشکل Namespace پلاگین‌ها (نسخه اصلاح‌شده و نهایی)
+          echo "Patching android/build.gradle.kts for namespace..."
           if [ -f "android/build.gradle.kts" ]; then
             cat << 'EOF' >> android/build.gradle.kts
 
-          subprojects {
-              plugins.withId("com.android.library") {
-                  extensions.configure<com.android.build.gradle.LibraryExtension>("android") {
-                      if (namespace == null) {
-                          namespace = project.group.toString()
-                      }
-                  }
-              }
-          }
-          EOF
+subprojects {
+    plugins.withId("com.android.library") {
+        extensions.configure<com.android.build.gradle.LibraryExtension>("android") {
+            if (namespace == null) {
+                namespace = project.group.toString()
+            }
+        }
+    }
+}
+EOF
           fi
 
       - name: Clean Dependencies and Cache

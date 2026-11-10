@@ -9,6 +9,7 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  sms_sender_background: ^1.0.7
   flutter_localizations:
     sdk: flutter
   share_plus: ^13.3.1

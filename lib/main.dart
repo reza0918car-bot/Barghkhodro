@@ -2924,7 +2924,7 @@ class _ServiceEditDialogState extends State<_ServiceEditDialog> {
     warrantyCtrl = TextEditingController(text: s?.warrantyNote ?? '');
     discountCtrl =
         TextEditingController(text: s != null && s.discount > 0 ? s.discount.toString() : '');
-    paidCtrl = TextEditingController(text: s != null ? s.paidAmount.toString() : '0');
+    paidCtrl = TextEditingController(text: s != null ? s.paidAmount.toString() : '');
     paymentMethod = s?.paymentMethod ?? 'کارت‌خوان (POS)';
     laborsList = s != null
         ? s.labors.map((l) => LaborItem(title: l.title, cost: l.cost)).toList()

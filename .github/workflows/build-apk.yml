@@ -48,6 +48,10 @@ jobs:
           sed -i 's/minSdkVersion = flutter.minSdkVersion/minSdkVersion = 23/' android/app/build.gradle.kts 2>/dev/null || true
           sed -i 's/minSdkVersion flutter.minSdkVersion/minSdkVersion 23/' android/app/build.gradle 2>/dev/null || true
 
+          # 👈 ۴. تنظیم compileSdkVersion پروژه اصلی به 34
+          sed -i 's/compileSdkVersion flutter.compileSdkVersion/compileSdkVersion 34/' android/app/build.gradle 2>/dev/null || true
+          sed -i 's/compileSdk = flutter.compileSdkVersion/compileSdk = 34/' android/app/build.gradle.kts 2>/dev/null || true
+
       - name: Fix sms_sender_background Plugin
         run: |
           PLUGIN_DIR=$(find ~/.pub-cache -type d -name "sms_sender_background-*" | head -n 1)
@@ -62,11 +66,18 @@ jobs:
               echo "Removed package attribute from AndroidManifest.xml"
             fi
             
-            # ۲. اضافه کردن namespace به build.gradle (در صورت نبود)
+            # ۲. اضافه کردن namespace و تنظیم compileSdkVersion
             GRADLE_FILE="$PLUGIN_DIR/android/build.gradle"
-            if [ -f "$GRADLE_FILE" ] && ! grep -q "namespace" "$GRADLE_FILE"; then
-              sed -i '/android {/a \    namespace "com.example.sms_sender_background"' "$GRADLE_FILE"
-              echo "Added namespace to build.gradle"
+            if [ -f "$GRADLE_FILE" ]; then
+              # اضافه کردن namespace در صورت نبود
+              if ! grep -q "namespace" "$GRADLE_FILE"; then
+                sed -i '/android {/a \    namespace "com.example.sms_sender_background"' "$GRADLE_FILE"
+              fi
+              
+              # 👈 تنظیم compileSdkVersion پلاگین به 34
+              sed -i 's/compileSdkVersion 33/compileSdkVersion 34/' "$GRADLE_FILE"
+              sed -i 's/compileSdk 33/compileSdk 34/' "$GRADLE_FILE"
+              echo "Updated compileSdkVersion to 34 for plugin"
             fi
           else
             echo "Plugin not found, skipping..."

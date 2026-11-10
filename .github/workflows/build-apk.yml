@@ -25,35 +25,6 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Regenerate Android & Apply Fixes
-        run: |
-          rm -rf android
-          flutter create --platforms=android .
-          
-          sed -i 's/android:label="[^"]*"/android:label="برق خودرو مهندس"/g' android/app/src/main/AndroidManifest.xml
-          
-          if ! grep -q "android.permission.INTERNET" android/app/src/main/AndroidManifest.xml; then
-            sed -i '/<manifest/a \    <uses-permission android:name="android.permission.INTERNET"\/>' android/app/src/main/AndroidManifest.xml
-          fi
-          if ! grep -q "android.permission.SEND_SMS" android/app/src/main/AndroidManifest.xml; then
-            sed -i '/<manifest/a \    <uses-permission android:name="android.permission.SEND_SMS"\/>' android/app/src/main/AndroidManifest.xml
-          fi
-          
-          if [ -f "android/app/build.gradle.kts" ]; then
-             sed -i 's/minSdkVersion = flutter.minSdkVersion/minSdkVersion = 23/' android/app/build.gradle.kts
-             sed -i 's/minSdkVersion flutter.minSdkVersion/minSdkVersion 23/' android/app/build.gradle.kts
-          fi
-          if [ -f "android/app/build.gradle" ]; then
-             sed -i 's/minSdkVersion flutter.minSdkVersion/minSdkVersion 23/' android/app/build.gradle
-          fi
-
-          # 👈 رفع مشکل Namespace به صورت تک‌خطی (بدون خطای قرمز در گیت‌هاب)
-          if [ -f "android/build.gradle.kts" ]; then
-             echo 'subprojects { plugins.withId("com.android.library") { extensions.configure<com.android.build.gradle.LibraryExtension>("android") { if (namespace == null) { namespace = project.group.toString() } } } }' >> android/build.gradle.kts
-          elif [ -f "android/build.gradle" ]; then
-             echo 'subprojects { plugins.withId("com.android.library") { if (android.namespace == null) { android.namespace = project.group } } }' >> android/build.gradle
-          fi
-
       - name: Clean Dependencies and Cache
         run: |
           rm -f pubspec.lock
@@ -61,6 +32,45 @@ jobs:
           rm -rf ~/.gradle/caches
           flutter pub get
           flutter pub upgrade --major-versions
+
+      - name: Regenerate Android & Apply Fixes
+        run: |
+          # ۱. ساخت مجدد پوشه اندروید
+          rm -rf android
+          flutter create --platforms=android .
+          
+          # ۲. تغییر نام برنامه و اضافه کردن مجوزها
+          sed -i 's/android:label="[^"]*"/android:label="برق خودرو مهندس"/g' android/app/src/main/AndroidManifest.xml
+          sed -i '/<manifest/a \    <uses-permission android:name="android.permission.INTERNET"\/>' android/app/src/main/AndroidManifest.xml
+          sed -i '/<manifest/a \    <uses-permission android:name="android.permission.SEND_SMS"\/>' android/app/src/main/AndroidManifest.xml
+          
+          # ۳. تنظیم minSdkVersion
+          sed -i 's/minSdkVersion = flutter.minSdkVersion/minSdkVersion = 23/' android/app/build.gradle.kts 2>/dev/null || true
+          sed -i 's/minSdkVersion flutter.minSdkVersion/minSdkVersion 23/' android/app/build.gradle 2>/dev/null || true
+
+      - name: Fix sms_sender_background Plugin
+        run: |
+          PLUGIN_DIR=$(find ~/.pub-cache -type d -name "sms_sender_background-*" | head -n 1)
+          
+          if [ -n "$PLUGIN_DIR" ]; then
+            echo "Found plugin at: $PLUGIN_DIR"
+            
+            # ۱. حذف package از AndroidManifest.xml
+            MANIFEST_FILE="$PLUGIN_DIR/android/src/main/AndroidManifest.xml"
+            if [ -f "$MANIFEST_FILE" ]; then
+              sed -i 's/package="[^"]*"//g' "$MANIFEST_FILE"
+              echo "Removed package attribute from AndroidManifest.xml"
+            fi
+            
+            # ۲. اضافه کردن namespace به build.gradle (در صورت نبود)
+            GRADLE_FILE="$PLUGIN_DIR/android/build.gradle"
+            if [ -f "$GRADLE_FILE" ] && ! grep -q "namespace" "$GRADLE_FILE"; then
+              sed -i '/android {/a \    namespace "com.example.sms_sender_background"' "$GRADLE_FILE"
+              echo "Added namespace to build.gradle"
+            fi
+          else
+            echo "Plugin not found, skipping..."
+          fi
 
       - name: Build APK (with auto-retry)
         run: |

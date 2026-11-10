@@ -48,13 +48,16 @@ jobs:
           sed -i 's/minSdkVersion = flutter.minSdkVersion/minSdkVersion = 23/' android/app/build.gradle.kts 2>/dev/null || true
           sed -i 's/minSdkVersion flutter.minSdkVersion/minSdkVersion 23/' android/app/build.gradle 2>/dev/null || true
 
-          # 👈 ۴. تنظیم compileSdkVersion پروژه اصلی به 36 (نسخه تقویت شده)
-          # این دستور هر خطی که شامل compileSdk باشد را پیدا کرده و مقدار آن را به 36 تغییر می‌دهد
+          # ۴. تنظیم compileSdkVersion پروژه اصلی به 36
           sed -i 's/compileSdk[[:space:]]*=.*/compileSdk = 36/g' android/app/build.gradle.kts 2>/dev/null || true
           sed -i 's/compileSdkVersion[[:space:]].*/compileSdkVersion 36/g' android/app/build.gradle 2>/dev/null || true
           
           echo "--- بررسی نهایی compileSdk در build.gradle.kts ---"
           grep -n "compileSdk" android/app/build.gradle.kts || true
+          
+          # 👈 ۵. ساخت خودکار آیکون برنامه
+          echo "Generating App Icons..."
+          dart run flutter_launcher_icons
 
       - name: Fix sms_sender_background Plugin
         run: |
@@ -63,22 +66,18 @@ jobs:
           if [ -n "$PLUGIN_DIR" ]; then
             echo "Found plugin at: $PLUGIN_DIR"
             
-            # ۱. حذف package از AndroidManifest.xml
             MANIFEST_FILE="$PLUGIN_DIR/android/src/main/AndroidManifest.xml"
             if [ -f "$MANIFEST_FILE" ]; then
               sed -i 's/package="[^"]*"//g' "$MANIFEST_FILE"
               echo "Removed package attribute from AndroidManifest.xml"
             fi
             
-            # ۲. اضافه کردن namespace و تنظیم compileSdkVersion
             GRADLE_FILE="$PLUGIN_DIR/android/build.gradle"
             if [ -f "$GRADLE_FILE" ]; then
-              # اضافه کردن namespace در صورت نبود
               if ! grep -q "namespace" "$GRADLE_FILE"; then
                 sed -i '/android {/a \    namespace "com.example.sms_sender_background"' "$GRADLE_FILE"
               fi
               
-              # 👈 تنظیم compileSdkVersion پلاگین به 36 (نسخه تقویت شده)
               sed -i 's/compileSdkVersion[[:space:]].*/compileSdkVersion 36/g' "$GRADLE_FILE"
               sed -i 's/compileSdk[[:space:]]*=.*/compileSdk = 36/g' "$GRADLE_FILE"
               echo "Updated compileSdkVersion to 36 for plugin"

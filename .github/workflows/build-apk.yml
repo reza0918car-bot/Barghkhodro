@@ -51,7 +51,7 @@ jobs:
              sed -i 's/minSdkVersion flutter.minSdkVersion/minSdkVersion 23/' android/app/build.gradle
           fi
 
-          # ۵. 👈 رفع مشکل Namespace پلاگین‌ها (مثل sms_sender_background)
+          # ۵. رفع مشکل Namespace پلاگین‌ها (نسخه اصلاح‌شده و بدون خطا)
           echo "Patching android/build.gradle for namespace..."
           if [ -f "android/build.gradle" ]; then
             cat << 'EOF' >> android/build.gradle
@@ -74,12 +74,10 @@ jobs:
             cat << 'EOF' >> android/build.gradle.kts
 
           subprojects {
-              afterEvaluate {
-                  if (hasProperty("android")) {
-                      extensions.configure<com.android.build.gradle.BaseExtension>("android") {
-                          if (namespace == null) {
-                              namespace = project.group.toString()
-                          }
+              plugins.withId("com.android.library") {
+                  extensions.configure<com.android.build.gradle.LibraryExtension>("android") {
+                      if (namespace == null) {
+                          namespace = project.group.toString()
                       }
                   }
               }

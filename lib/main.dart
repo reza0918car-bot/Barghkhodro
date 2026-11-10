@@ -2687,17 +2687,6 @@ class _CarServicesScreenState extends State<CarServicesScreen> {
     );
   }
 
-  Future<bool> _launchSms(String phone, String body) async {
-    final String encodedBody = Uri.encodeComponent(body);
-    final Uri uri = Uri.parse('sms:$phone?body=$encodedBody');
-    try {
-      if (await canLaunchUrl(uri)) {
-        await launchUrl(uri);
-        return true;
-      }
-    } catch (_) {}
-    return false;
-  }
 
     Future<void> _sendSmsNotification(ServiceRecord s) async {
     final cleanPhone = NumberHelper.cleanNumbers(widget.customer.phone);

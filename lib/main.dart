@@ -3192,7 +3192,7 @@ class _ServiceEditDialogState extends State<_ServiceEditDialog> {
                   ),
                   const SizedBox(height: 8),
                 ],
-                _buildItemBox(
+                  _buildItemBox(
                   cs: cs,
                   title: '🔩 لیست قطعات:',
                   titleColor: Colors.amberAccent,
@@ -3204,8 +3204,20 @@ class _ServiceEditDialogState extends State<_ServiceEditDialog> {
                       .map((e) => _buildListItemRow(
                             cs: cs,
                             label: '• ${e.value.name}: ${formatToman(e.value.price)}',
-                            onRemove: () =>
-                                setState(() => partsList.removeAt(e.key)),
+                            onRemove: () {
+                              // 👈 پیدا کردن قطعه در انبار و برگرداندن موجودی
+                              final partToRemove = e.value;
+                              final templateIndex = _partTemplates.indexWhere(
+                                  (t) => t.name == partToRemove.name);
+                              
+                              if (templateIndex != -1) {
+                                _partTemplates[templateIndex].quantity += 1;
+                              }
+                              
+                              setState(() {
+                                partsList.removeAt(e.key);
+                              });
+                            },
                           ))
                       .toList(),
                   onAddManual: () => _openAddItemDialog(isLabor: false),
